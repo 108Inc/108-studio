@@ -1,25 +1,22 @@
-# 108 STUDIO v0.1
+# 108 STUDIO v0.2
 
-Internal prototype of the SNS proposal editor.
+108道場の85点以上の企画をブラッシュアップし、水曜日の対面MTGで中島が最終承認した企画のみを資料化するアプリ。
 
-## Files
-- `server.py`: Python HTTP server, Google login and email allowlist
-- `static/index.html`: editor with local browser storage and print-to-PDF
-- `render.yaml`: Render web service blueprint
-- `requirements.txt`: Python dependencies
+## 機能
+- Googleログイン・メールアドレス許可リスト（v0.1の仕組みを継承）
+- 複数企画のテキスト貼り付け・見出し別抽出
+- 文字選択できるPDFのアップロード（pypdfでテキスト抽出）
+- 「相談内容」「評価」「FB」見出し以下を次の見出しまで除外
+- 人選理由、出演メンバー、企画内容、狙い／意図を編集
+- A4複数ページプレビュー、任意の補足ページ、ブラウザ印刷からPDF保存
 
-## Render environment variables
-- `STUDIO_GOOGLE_CLIENT_ID`: Google OAuth web client ID (configure the Render origin in Google Cloud)
-- `STUDIO_SESSION_SECRET`: generated random secret, at least 32 characters
-- `STUDIO_ALLOWED_EMAILS`: comma-separated list of employee email addresses
+## 導入
+GitHub `108Inc/108-studio` のルートに `server.py`, `requirements.txt`, `render.yaml`, `README.md` を配置。`static/index.html` を配置。RenderがGitHubのmainに連動していれば再デプロイされます。既存の環境変数 `STUDIO_GOOGLE_CLIENT_ID`, `STUDIO_ALLOWED_EMAILS`, `STUDIO_SESSION_SECRET` は変更不要です。
 
-**Important:** This is a prototype. Data is saved to localStorage in each user's browser, not shared or durably backed up. Avoid real confidential project content until persistent server-side storage and backup are implemented. Google login is required to access the app but does not encrypt local browser data. The PDF uses the browser's Print -> Save as PDF. The visual design is provisional, not a verified reproduction of the Canva template.
-
-## Deployment
-1. Upload `server.py`, `render.yaml`, `requirements.txt`, and the `static` folder to a new GitHub repository (replace README if desired).
-2. In Render, create **Blueprint** from this repository, or create **Web Service** with Python runtime, `pip install -r requirements.txt`, `python server.py`.
-3. Set `STUDIO_GOOGLE_CLIENT_ID`, `STUDIO_ALLOWED_EMAILS`, and `STUDIO_SESSION_SECRET` in Render environment settings.
-4. In Google Cloud OAuth client configuration, register `https://YOUR-SERVICE.onrender.com` under Authorized JavaScript origins. The client ID can be reused from 108 DOJO only if the same origin is added to its configuration.
-5. Deploy and sign in with an allowed Google account.
-
-Do not copy DOJO Google refresh tokens or Slack API tokens into this service.
+## 重要な制限
+- PDFはテキスト埋め込み型のみ。画像PDF・スキャンPDFのOCRは未実装。
+- 企画の区切りは見出し形式に依存するため、抽出結果を必ず確認してください。Slackからの直接取り込みは未実装。
+- 現状はブラウザlocalStorage保存であり、サーバーへの永続保存・共同編集は未実装。
+- Canva原本のレイアウトを完全再現した版ではありません。原本PDFとの照合が必要です。
+- 資料の画像・動画サムネイル自動取得は未実装。URLはクリック可能。
+- 外部へ公開されているRender URLでもログイン必須ですが、正式な社内運用にはセキュリティレビューを推奨します。

@@ -1,1 +1,1 @@
-# No third-party Python packages required for v0.1.
+pypdf>=5.0,<7

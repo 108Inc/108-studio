@@ -1,5 +1,5 @@
 """108 STUDIO prototype: Google ID token login with email allowlist."""
-import os, json, time, hmac, hashlib, base64, http.cookies, urllib.request, urllib.parse
+import os, json, time, hmac, hashlib, base64, http.cookies, urllib.request, urllib.parse, io
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -72,6 +72,24 @@ class Handler(SimpleHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == '/api/logout':
             self.send_response(200); self.send_header('Set-Cookie', 'studio_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0'); self.end_headers(); return
+        if path == '/api/extract-pdf':
+            if not current_user(self.headers.get('Cookie', '')): return self.send_json({'error':'ログインが必要です'},401)
+            origin = self.headers.get('Origin', '')
+            if origin and origin not in ('https://' + self.headers.get('Host',''), 'http://localhost:' + str(PORT)):
+                return self.send_json({'error':'origin mismatch'},403)
+            try:
+                size = int(self.headers.get('Content-Length','0'))
+                if not 0 < size <= 12*1024*1024: raise ValueError('PDFは12MB以下にしてください')
+                data = self.rfile.read(size)
+                if not data.startswith(b'%PDF-'): raise ValueError('PDFファイルではありません')
+                from pypdf import PdfReader
+                reader = PdfReader(io.BytesIO(data), strict=False)
+                if len(reader.pages)>60: raise ValueError('PDFは60ページ以下にしてください')
+                texts = [(page.extract_text(extraction_mode='layout') or '') for page in reader.pages]
+                text = '\n\n'.join(texts)
+                if not text.strip(): raise ValueError('文字を抽出できませんでした。画像だけのPDFはテキストを貼り付けてください')
+                return self.send_json({'text':text[:180000],'pages':len(reader.pages)})
+            except Exception as e: return self.send_json({'error':str(e)},400)
         if path != '/api/login': return self.send_json({'error': 'not found'}, 404)
         if self.headers.get('Origin') and self.headers['Origin'] != 'https://' + self.headers.get('Host', '') and self.headers['Origin'] != 'http://localhost:' + str(PORT):
             return self.send_json({'error': 'origin mismatch'}, 403)
