@@ -72,6 +72,33 @@ class Handler(SimpleHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == '/api/logout':
             self.send_response(200); self.send_header('Set-Cookie', 'studio_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0'); self.end_headers(); return
+        if path == '/api/tiktok-thumbnail':
+            if not current_user(self.headers.get('Cookie', '')):
+                return self.send_json({'error': 'ログインが必要です'}, 401)
+            origin = self.headers.get('Origin', '')
+            if origin and origin not in ('https://' + self.headers.get('Host',''), 'http://localhost:' + str(PORT)):
+                return self.send_json({'error': 'origin mismatch'}, 403)
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 4096: raise ValueError('リクエストが大きすぎます')
+                payload = json.loads(self.rfile.read(length))
+                video_url = str(payload.get('url', '')).strip()
+                parsed = urllib.parse.urlparse(video_url)
+                host = (parsed.hostname or '').lower()
+                if parsed.scheme != 'https' or host not in ('www.tiktok.com', 'tiktok.com', 'm.tiktok.com') or not parsed.path.startswith('/@') or '/video/' not in parsed.path:
+                    raise ValueError('通常のTikTok動画URL（https://www.tiktok.com/@.../video/...）を指定してください')
+                canonical = 'https://www.tiktok.com' + parsed.path
+                endpoint = 'https://www.tiktok.com/oembed?' + urllib.parse.urlencode({'url': canonical})
+                req = urllib.request.Request(endpoint, headers={'User-Agent': 'Mozilla/5.0 (108 STUDIO preview)', 'Accept': 'application/json'})
+                with urllib.request.urlopen(req, timeout=9) as response:
+                    info = json.load(response)
+                thumbnail = info.get('thumbnail_url', '')
+                parsed_thumb = urllib.parse.urlparse(thumbnail)
+                if parsed_thumb.scheme != 'https' or not parsed_thumb.hostname:
+                    raise ValueError('サムネイルURLが取得できませんでした')
+                return self.send_json({'thumbnail': thumbnail, 'source': 'TikTok oEmbed'})
+            except Exception:
+                return self.send_json({'error': 'TikTokからサムネイルを取得できませんでした。動画の公開状態やTikTok側の制限が原因の場合があります。画像を手動で指定してください。'}, 422)
         if path == '/api/extract-pdf':
             if not current_user(self.headers.get('Cookie', '')): return self.send_json({'error':'ログインが必要です'},401)
             origin = self.headers.get('Origin', '')
