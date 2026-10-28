@@ -1,42 +1,40 @@
-108 STUDIO v0.5.1 — Slack確定企画スレッド検出修正
+# 108 STUDIO v0.6.0 β — 共同編集テスト版
 
-- 最終確定企画の表記ゆれを許容
-- 親投稿のthread_tsが自分自身を指す場合も検出
-- 日付・返信件数を表示
-- 未検出時に検索対象投稿数・一致数を表示
-- 認証・PDF・編集UIは変更なし
+v0.5.4 を基に、既存の Google ログイン・Slack 取り込み・資料編集・PDF 印刷を維持し、Supabase による共有資料保存を追加しました。
 
-# 108 STUDIO v0.5.0 — Slack連携
+## Render 環境変数
 
-## 導入
-既存のファイルをGitHubに上書きしてRenderで再デプロイ。既存のGoogleログイン設定は維持。
+- `STUDIO_GOOGLE_CLIENT_ID`, `STUDIO_ALLOWED_EMAILS`, `STUDIO_SESSION_SECRET`（既存）
+- `STUDIO_SLACK_BOT_TOKEN`（既存）
+- `SUPABASE_URL`（Supabase の Project URL）
+- `SUPABASE_SECRET_KEY`（Supabase の Secret key。絶対に GitHub に登録しない）
 
-Render環境変数に `STUDIO_SLACK_BOT_TOKEN` を追加してください（`xoxb-` で始まるBot User OAuth Token）。**トークンをGitHubにコミットしないでください。**
+## 使用方法
 
-Slack Appをワークスペースにインストールし、Bot Token Scopesとして `channels:read`, `channels:history`, `groups:read`, `groups:history` を付与して再インストール。対象の公開/非公開チャンネルにBotを招待（`/invite @アプリ名`）。
+1. GitHub で **テスト用ブランチ** を作り、この ZIP のファイルを上書き。Render で **別のテスト用 Web Service** を作って動作検証してください。既存の本番 URL を直接置き換えないでください。
+2. Google OAuth の許可済みアカウントでログインします。テスト用 URL を利用する場合、Google OAuth の Authorized JavaScript origins の追加が必要なことがあります。
+3. 既存のローカル資料を開き「＋ 今の資料を共有保存」。同じ URL をもう一人に共有してください。
+4. 別々の項目を編集すると、フォーカスが外れたとき約2秒間隔で相手側に反映されます。
+5. 「変更履歴」は編集バージョンと編集者の一覧表示のみです。復元 UI は未実装です。
 
-## 操作
-1. クライアント設定を開き「Slackチャンネルを再取得」→ チャンネルを選択 → 「この設定を保存」。
-2. 一括取り込みタブの「確定企画スレッドを探す」で `【最終確定企画｜10/28】` 形式の親メッセージを検索。
-3. スレッドを選択→「返信を確認する」→採用企画をチェック→「チェックした企画を取り込む」。
+## 安全設計・制約
 
-## 注意
-- Slackのデータはサーバー側から読み取り専用で取得。Slackへの書き込みはしません。
-- クライアントとチャンネルの紐付けは従来どおりブラウザローカル保存です。
-- Slackの返信1件を企画として抽出。未採用・FB・人選理由は資料に入れません。
-- 取り込み後は元の資料ページ構成を再生成します。編集済み資料への追加は慎重に行ってください。
-- 取得できる履歴は直近最大1000件程度のチャンネルメッセージ。古いスレッドは検索できない場合があります。
-- Slack Appのプランや権限により履歴取得に制限がある場合があります。
+- Supabase の秘密キーは Render のサーバー側だけで利用。ブラウザには渡しません。
+- Google ログインのメール許可リストでアクセス制限。**許可リスト内の全員が共有資料を閲覧・編集できます**。クライアントごとのアクセス権は未実装です。
+- `studio_documents` の version を使って競合更新を検知。異なる項目なら再マージを試み、同じ項目の競合なら自動上書きを停止します。
+- **Google Docs のような文字単位の同時編集ではありません**。2秒間隔の更新確認を使う準リアルタイム共同編集です。
+- 画像は JSON に埋め込んで保存するため、1資料約4MB以下。大量の画像を扱う場合は Supabase Storage に移す必要があります。
+- 同時にページを追加・削除・並び替える操作は競合しやすいため、同時操作は避けてください。
+- クライアント設定と Slack チャンネルの紐付けは従来どおりブラウザローカルに保存され、共有資料には同期されません。
+- 変更履歴は更新時のベストエフォート記録。厳密な監査ログ・履歴復元・編集者のリアルタイム表示・編集ロックは今後の課題です。
+- 無料プランでは非アクティブ時の停止やバックアップ制限があります。重要資料は PDF 等でもバックアップしてください。
 
+## データベース
 
-## v0.5.3
-- PDFページ番号を削除。
-- 全ページ右下に108ロゴのみを控えめに表示（幅30px）。
-- その他の編集、Slack、PDF出力機能は変更なし。
+以前に作成した `studio_documents` / `studio_revisions` 等のテーブルを利用します。新しい SQL の実行は不要です。
 
+## 動作確認
 
-## v0.5.4 footer correction
-- No page numbers in proposal pages, cover, or dividers; small 108 logo remains at lower right.
-- Removes legacy page-number footer elements in the rendered preview and print.
-- Suppresses CSS print margin-box headers/footers in browsers that support the feature.
-- If a browser still adds its own print page number, disable browser print headers/footers; applications cannot override all browser settings.
+- `python -m py_compile server.py cloud_backend.py`
+- `node --check` で HTML 内の JavaScript の構文検査
+- 本番の Supabase / Google OAuth に接続する E2E テストは未実施です。

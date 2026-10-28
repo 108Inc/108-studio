@@ -2,6 +2,7 @@
 import os, json, time, hmac, hashlib, base64, http.cookies, urllib.request, urllib.parse, io, re
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+import cloud_backend
 
 ROOT = Path(__file__).resolve().parent
 PORT = int(os.getenv('PORT', '8765'))
@@ -87,6 +88,22 @@ class Handler(SimpleHTTPRequestHandler):
             if path in ('/', '/index.html'):
                 return self.send_bytes(LOGIN.replace('__CLIENT_ID__', json.dumps(CLIENT_ID)).encode())
             return self.send_json({'error': 'ログインが必要です'}, 401)
+        if path == '/api/studio/status': return self.send_json({'configured':cloud_backend.ready(),'email':user})
+        if path == '/api/studio/documents':
+            try: return self.send_json({'documents':cloud_backend.documents()})
+            except Exception as e: return self.send_json({'error':str(e)},502)
+        if path.startswith('/api/studio/documents/'):
+            parts=path.strip('/').split('/')
+            if len(parts) not in (4,5): return self.send_json({'error':'not found'},404)
+            try:
+                import uuid
+                doc_id=str(uuid.UUID(parts[3]))
+                if len(parts)==5 and parts[4]=='revisions': return self.send_json({'revisions':cloud_backend.revisions(doc_id)})
+                if len(parts)!=4: return self.send_json({'error':'not found'},404)
+                doc=cloud_backend.document(doc_id)
+                return self.send_json({'document':doc} if doc else {'error':'not found'},200 if doc else 404)
+            except ValueError as e: return self.send_json({'error':str(e)},400)
+            except Exception as e: return self.send_json({'error':str(e)},502)
         if path.startswith('/api/slack/'):
             try:
                 args = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -144,6 +161,27 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        if path == '/api/studio/documents' or path.startswith('/api/studio/documents/'):
+            user=current_user(self.headers.get('Cookie',''))
+            if not user: return self.send_json({'error':'ログインが必要です'},401)
+            origin=self.headers.get('Origin','')
+            if origin and origin not in ('https://'+self.headers.get('Host',''),'http://localhost:'+str(PORT)):
+                return self.send_json({'error':'origin mismatch'},403)
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if not 0<length<=4500000: return self.send_json({'error':'リクエストサイズが不正です'},413)
+                data=json.loads(self.rfile.read(length))
+                if path == '/api/studio/documents':
+                    return self.send_json({'document':cloud_backend.create(data,user)},201)
+                import uuid
+                parts=path.strip('/').split('/')
+                if len(parts)!=4: return self.send_json({'error':'not found'},404)
+                doc_id=str(uuid.UUID(parts[3]))
+                updated=cloud_backend.update(doc_id,data,user)
+                if not updated: return self.send_json({'error':'conflict','document':cloud_backend.document(doc_id)},409)
+                return self.send_json({'document':updated})
+            except ValueError as e: return self.send_json({'error':str(e)},400)
+            except Exception as e: return self.send_json({'error':'保存できませんでした: '+str(e)},502)
         if path == '/api/logout':
             self.send_response(200); self.send_header('Set-Cookie', 'studio_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0'); self.end_headers(); return
         if path == '/api/tiktok-thumbnail':
