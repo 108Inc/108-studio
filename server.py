@@ -61,7 +61,7 @@ def slack_api(method, params=None):
 
 def is_final_thread(text):
     import re
-    return bool(re.search(r'【\s*最終確定企画\s*[｜|]\s*[^】]+】', text or ''))
+    return bool(re.search(r'最終\s*確定\s*企画', text or ''))
 
 LOGIN = '''<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>108 STUDIO | ログイン</title><script src="https://accounts.google.com/gsi/client" async defer></script><style>body{background:#f2f4f7;color:#18233a;font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0}.box{background:white;border:1px solid #e2e5ec;border-radius:18px;padding:42px;max-width:420px;text-align:center;box-shadow:0 10px 50px #14203a10}h1{letter-spacing:.1em}p{color:#65718a;line-height:1.7}#btn{display:flex;justify-content:center;margin:26px 0}#msg{color:#b13046}</style><div class="box"><h1>108 STUDIO</h1><p>社内向け企画資料エディタ<br>許可されたGoogleアカウントでログインしてください。</p><div id="btn"></div><p id="msg"></p></div><script>const cid=__CLIENT_ID__;const msg=document.getElementById('msg');if(!cid){msg.textContent='管理者によるログイン設定が必要です'}else{window.onload=()=>{google.accounts.id.initialize({client_id:cid,callback:async r=>{try{const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:r.credential})});const j=await res.json();if(!res.ok)throw Error(j.error||'ログイン失敗');location.href='/'}catch(e){msg.textContent=e.message}}});google.accounts.id.renderButton(document.getElementById('btn'),{theme:'outline',size:'large',text:'signin_with',width:290})}}</script></html>'''
 
@@ -104,17 +104,25 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json({'channels':channels})
                 if not re.fullmatch(r'[CG][A-Z0-9]{7,20}',channel): return self.send_json({'error':'SlackチャンネルIDを指定してください'},400)
                 if path == '/api/slack/threads':
-                    items=[]; cursor=''
+                    items=[]; cursor=''; scanned=0; candidates=0; pages=0
                     for _ in range(5):
                         q={'channel':channel,'limit':200}
                         if cursor: q['cursor']=cursor
                         result=slack_api('conversations.history',q)
+                        pages += 1
                         for m in result.get('messages',[]):
-                            if is_final_thread(m.get('text','')) and not m.get('thread_ts'):
-                                items.append({'ts':m['ts'],'title':m.get('text','').split('\n')[0][:100], 'replies':m.get('reply_count',0)})
+                            scanned += 1
+                            if is_final_thread(m.get('text','')):
+                                candidates += 1
+                                # Slack may include thread_ts on a parent; only exclude actual replies.
+                                if m.get('thread_ts') and m['thread_ts'] != m.get('ts'):
+                                    continue
+                                items.append({'ts':m['ts'], 'title':m.get('text','').split('\n')[0][:100],
+                                              'replies':m.get('reply_count',0), 'date':time.strftime('%Y/%m/%d',time.localtime(float(m['ts'])))})
                         cursor=result.get('response_metadata',{}).get('next_cursor','')
                         if not cursor: break
-                    return self.send_json({'threads':items})
+                    items.sort(key=lambda x:float(x['ts']), reverse=True)
+                    return self.send_json({'threads':items,'diagnostics':{'scanned':scanned,'matched':candidates,'pages':pages,'more':bool(cursor)}})
                 if path == '/api/slack/replies':
                     ts=args.get('ts',[''])[0]
                     if not re.fullmatch(r'\d{10,12}\.\d{6}',ts): return self.send_json({'error':'スレッドIDが不正です'},400)
