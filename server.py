@@ -217,6 +217,31 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'thumbnail': thumbnail, 'source': 'TikTok oEmbed'})
             except Exception:
                 return self.send_json({'error': 'TikTokからサムネイルを取得できませんでした。動画の公開状態やTikTok側の制限が原因の場合があります。画像を手動で指定してください。'}, 422)
+        if path == '/api/ai/polish-field':
+            if not current_user(self.headers.get('Cookie','')): return self.send_json({'error':'ログインが必要です'},401)
+            origin=self.headers.get('Origin','')
+            if origin and origin not in ('https://'+self.headers.get('Host',''),'http://localhost:'+str(PORT)):
+                return self.send_json({'error':'origin mismatch'},403)
+            try:
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=30000: raise ValueError('入力が大きすぎます')
+                body=json.loads(self.rfile.read(size))
+                field=body.get('field'); original=body.get('text')
+                if field not in ('title','content','shoot','aim','extra','freeNote') or not isinstance(original,str) or not original.strip() or len(original)>12000:
+                    raise ValueError('編集対象の文章が不正です')
+                key=os.environ.get('OPENAI_API_KEY','')
+                if not key: raise ValueError('OPENAI_API_KEY が設定されていません')
+                label={'title':'企画タイトル','content':'企画内容','shoot':'撮影・演出イメージ','aim':'狙い・意図','extra':'補足','freeNote':'自由記入欄'}[field]
+                payload={'model':os.environ.get('STUDIO_AI_MODEL','gpt-4.1-mini'),'messages':[
+                    {'role':'system','content':'あなたは108 STUDIOの企画書編集者です。入力された「'+label+'」の文章だけを、クライアント提出用に読みやすく簡潔に整えてください。企画内容、演出、固有名詞、人数、音源、手順、数値、URLを創作・変更・省略しない。相談事項を勝手に追加しない。文章のみ返す。'},
+                    {'role':'user','content':original}], 'temperature':0.2}
+                req=urllib.request.Request('https://api.openai.com/v1/chat/completions',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
+                with urllib.request.urlopen(req,timeout=45) as response: result=json.load(response)
+                edited=result['choices'][0]['message']['content'].strip()
+                if not edited: raise ValueError('AIの出力が空でした')
+                return self.send_json({'text':edited})
+            except ValueError as exc: return self.send_json({'error':str(exc)},422)
+            except Exception: return self.send_json({'error':'AI文章修正に失敗しました。元の文章は変更していません。'},502)
         if path == '/api/ai/polish':
             if not current_user(self.headers.get('Cookie','')): return self.send_json({'error':'ログインが必要です'},401)
             origin=self.headers.get('Origin','')
