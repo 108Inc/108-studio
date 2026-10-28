@@ -12,3 +12,6 @@ v0.5.23: AI文章編集は短縮一辺倒を廃止。原文の情報の範囲内
 
 
 v0.5.26: Slack import rendering guard, pageOrder reconciliation and visible page count verification.
+
+
+v0.5.27: Fix workspace ReferenceError on idea page render (var function scope); preserve existing imported ideas.
