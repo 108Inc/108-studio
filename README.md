@@ -23,3 +23,6 @@ v0.5.27: Fix workspace ReferenceError on idea page render (var function scope); 
 - 企画本文・タイトル・AI編集はプレビュー上の操作を維持
 - 重複する編集フォーム・ナビゲーション・サムネイル一括操作を編集タブで非表示
 - デスクトップ時の左右比率を約25:75に変更
+
+
+v0.5.29: PC editing view uses independent scrolling in sidebar and page preview, keeping the page visible while adjusting sidebar controls. Print and mobile layouts unchanged.
