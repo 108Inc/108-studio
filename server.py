@@ -55,7 +55,7 @@ def polish_ideas(ideas):
       "話し言葉、重複、冗長な表現を整理し、自然な日本語で簡潔にする。"
       "出演者、音源、使用箇所、場所・衣装、撮影手順、企画の狙い、数値、固有名詞、URLを創作・変更・省略しない。"
       "記載のない内容は補わない。空欄は空欄のまま。"
-      "titleは冒頭の装飾記号を除去。category、url、members、sound、part、locationは入力値を厳密に維持。"
+      "titleは冒頭の装飾記号を除去。category、url、members、sound、part、locationは編集対象外（返却値は無視され元データを使用）。"
       "content、shoot、aim、extraは元情報を保持して整える。"
       "入力配列と同じ件数・同じ順序でJSONを返す。")
     schema = {'type':'object','additionalProperties':False,'required':['ideas'],
@@ -75,10 +75,16 @@ def polish_ideas(ideas):
     for old,new in zip(ideas,answer):
         if not isinstance(new,dict) or any(not isinstance(new.get(k),str) for k in AI_FIELDS):
             raise ValueError('AIの出力形式が不正です。登録は行っていません。')
+        # Immutable fields are always restored from the trusted parsed source.
+        # Do not reject the whole batch merely because the model echoed them differently.
         for k in ('category','url','members','sound','part','location'):
-            if new[k] != old[k]:
-                raise ValueError('AIが確定情報を変更したため登録を中止しました。')
-        if not new['title'].strip(): raise ValueError('AIが企画名を失ったため登録を中止しました。')
+            new[k] = old[k]
+        if not new['title'].strip():
+            new['title'] = old['title']
+        # Do not allow the model to erase non-empty descriptive sections.
+        for k in ('content','shoot','aim','extra'):
+            if old[k].strip() and not new[k].strip():
+                new[k] = old[k]
     return answer
 
 SLACK_TOKEN = os.getenv('STUDIO_SLACK_BOT_TOKEN', '').strip()
