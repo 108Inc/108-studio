@@ -133,22 +133,23 @@ function renderPageList(){const root=$('page-list');root.replaceChildren();$('pa
 const specs=[['title','企画名','text'],['category','企画カテゴリ','select'],['url','参考動画URL','url'],['thumbnail','参考動画サムネイル（スクショ貼り付け／画像アップロード）','text'],['members','出演メンバー','textarea'],['sound','音源','text'],['part','使用箇所','text'],['location','場所／衣装','text'],['content','企画内容','textarea'],['shoot','撮影／演出イメージ（任意）','textarea'],['aim','狙い／意図','textarea'],['extra','補足ページの内容（任意）','textarea'],['twoPages','補足ページを追加','checkbox']];
 function save(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){console.warn('保存容量の上限に達しました',e)}}function escapeHTML(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function urlSafe(s){try{const u=new URL(s);return ['http:','https:'].includes(u.protocol)?u.href:''}catch{return ''}}
 function normalize(s){return s.replace(/\r/g,'').replace(/[\u200b\u200e]/g,'').replace(/^[\s　]*[■◆●・\-]+\s*/,'').trim()}
-const labels=[['url',/^(?:参考動画URL|参考動画リンク|参考動画|参考URL|参考リンク|参考)\s*[:：]?\s*$/],['members',/^(?:出演メンバー|出演者|メンバー)\s*[:：]?\s*$/],['skip',/^人選理由\s*[:：]?\s*$/],['content',/^(?:企画内容|企画概要|内容)\s*[:：]?\s*$/],['aim',/^(?:狙い\s*[／\/・]\s*意図|狙い\s*[／\/]\s*ポイント|企画意図|狙い|意図)\s*[:：]?\s*$/],['shoot',/^(?:撮影\s*[／\/]\s*演出イメージ|撮影方法|撮影イメージ|撮影ポイント)\s*[:：]?\s*$/],['sound',/^(?:音源|使用音源)\s*[:：]?\s*$/],['part',/^(?:箇所|使用箇所)\s*[:：]?\s*$/],['location',/^(?:場所\s*[／\/]\s*衣装|場所|衣装)\s*[:：]?\s*$/],['skip',/^(?:相談内容|相談事項|評価結果|評価|フィードバック|FB|中島向け(?:FB|メモ)|採点|判定)\s*[:：]?\s*$/]];
-function header(line){const s=normalize(line).replace(/^[<＜〈【\[]\s*(.*?)\s*[>＞〉】\]]\s*[:：]?\s*$/,'$1').trim();for(const [k,re] of labels){if(re.test(s))return {key:k,value:''}}const m=s.match(/^(参考動画URL|参考URL|出演メンバー|出演者|メンバー|人選理由|企画内容|企画概要|狙い[／\/]意図|狙い|撮影方法|音源|使用箇所|場所|相談内容|評価結果|FB)\s*[:：]\s*(.+)$/);if(m){const h=header(m[1]);if(h)return {key:h.key,value:m[2]}}return null}
+function cleanTitle(s){return String(s||'').replace(/^[\s　`｀*＊_~〜～・･●◆◇■□▶▷▸▹\-—–…｡。、，,\.．!！?？]+/u,'').replace(/[\s　`｀*＊_~〜～・･●◆◇■□▶▷▸▹\-—–…｡。、，,\.．]+$/u,'').trim()}
+const labels=[['url',/^(?:参考動画URL|参考動画リンク|参考動画|参考URL|参考リンク|参考)\s*[:：]?\s*$/],['members',/^(?:出演メンバー|出演者|メンバー)\s*[:：]?\s*$/],['skip',/^人選理由\s*[:：]?\s*$/],['content',/^(?:企画内容|企画概要|内容)\s*[:：]?\s*$/],['aim',/^(?:狙い\s*[／\/・]\s*意図|狙い\s*[／\/]\s*ポイント|企画意図|狙い|意図)\s*[:：]?\s*$/],['shoot',/^(?:撮影\s*[／\/]\s*演出イメージ|撮影方法|撮影イメージ|撮影ポイント)\s*[:：]?\s*$/],['sound',/^(?:音源|使用音源)\s*[:：]?\s*$/],['part',/^(?:箇所|使用箇所)\s*[:：]?\s*$/],['location',/^(?:場所\s*[／\/]\s*衣装|場所|衣装)\s*[:：]?\s*$/],['skip',/^(?:相談(?:内容|事項|したいこと|・詰めたいこと|・詰めること)?|詰めたいこと|詰めること|確認(?:事項|したいこと)?|質問(?:事項)?|評価結果|評価|フィードバック|FB|中島向け(?:FB|メモ)|採点|判定)\s*[:：]?\s*$/]];
+function header(line){const s=normalize(line).replace(/^[<＜〈【\[]\s*(.*?)\s*[>＞〉】\]]\s*[:：]?\s*$/,'$1').replace(/[\s　`｀]+$/g,'').trim();for(const [k,re] of labels){if(re.test(s))return {key:k,value:''}}const m=s.match(/^(参考動画URL|参考URL|出演メンバー|出演者|メンバー|人選理由|企画内容|企画概要|狙い[／\/]意図|狙い|撮影方法|音源|使用箇所|場所|相談内容|相談・詰めたいこと|相談したいこと|詰めたいこと|評価結果|FB)\s*[:：]\s*(.+)$/);if(m){const h=header(m[1]);if(h)return {key:h.key,value:m[2]}}return null}
 function titleLine(line){
  const s=normalize(line);if(!s||/^https?:\/\//.test(s))return '';
- let m=s.match(/^(?:企画名|企画タイトル|タイトル)\s*[:：]\s*(.+)$/);if(m)return m[1].trim();
+ let m=s.match(/^(?:企画名|企画タイトル|タイトル)\s*[:：]\s*(.+)$/);if(m)return cleanTitle(m[1]);
  // 丸数字は撮影手順にも使われるため企画の境界にしない。
- m=s.match(/^【\s*企画\s*(?:[①-⑳]|\d{1,2})\s*[】]\s*[:：-]?\s*(.+)$/);return m?m[1].trim():'';
+ m=s.match(/^【\s*企画\s*(?:[①-⑳]|\d{1,2})\s*[】]\s*[:：-]?\s*(.+)$/);return m?cleanTitle(m[1]):'';
 }
 function parseIdeas(raw,{single=false}={}){
  const lines=raw.replace(/\r/g,'').split('\n');const out=[];let cur=null,active=null;
- function start(t){if(cur&&cur.title)out.push(cur);cur=blank();cur.title=t;active=null}
+ function start(t){if(cur&&cur.title)out.push(cur);cur=blank();cur.title=cleanTitle(t);active=null}
  for(const line of lines){const original=line.trim();if(!original)continue;const s=normalize(original),h=header(s),t=titleLine(s);
   if(t&&!single){start(t);continue}
   if(!cur){if(t){start(t);continue}if(single){ // Slack返信の先頭行だけをタイトルとして使用。見出し・連絡文は対象外。
     if(h||/^(?:確認|承知|了解|修正|FB|相談|お疲れ|ありがとう|よろしく|https?:)/.test(s))return [];
-    start(s.replace(/^【\s*(?:企画名|企画)\s*[】]\s*/,'').slice(0,120));continue;
+    start(cleanTitle(s.replace(/^【\s*(?:企画名|企画)\s*[】]\s*/,'')).slice(0,120));continue;
    }continue}
   if(h){active=h.key;if(active!=='skip'&&h.value)cur[active]+=(cur[active]?'\n':'')+h.value;continue}
   if(active==='skip')continue;
