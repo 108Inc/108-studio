@@ -500,8 +500,8 @@ async function downloadPdfDirect(){
   // The original --group-color lives on #pages, not on :root. Copy it to the PDF capture host.
   root.style.setProperty('--group-color',groupColor());
   const css=document.createElement('style');css.textContent=`
-  /* html2canvas can corrupt Japanese glyphs in segmented Google Fonts. Use the OS Japanese font for PDF capture only. */
-  .pdf-direct-root,.pdf-direct-root *{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic','Meiryo',sans-serif!important;font-variant-ligatures:none!important;text-rendering:auto!important;-webkit-font-smoothing:auto!important}
+  /* Keep the same Noto Sans JP font as the on-screen preview. */
+  .pdf-direct-root,.pdf-direct-root *{font-family:'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif!important;font-variant-ligatures:none!important}
   .pdf-direct-root .page{width:794px!important;height:1123px!important;min-height:1123px!important;max-height:1123px!important;box-shadow:none!important;margin:0!important;transform:none!important;zoom:1!important;break-after:always!important;page-break-after:always!important;overflow:hidden!important}
   .pdf-direct-root .page.proposal-page{padding:0!important}
   .pdf-direct-root .cover-page,.pdf-direct-root .divider-page{border:15px solid #0d0d0d!important}
@@ -550,7 +550,11 @@ async function downloadPdfDirect(){
    root.appendChild(clone);
   }
   document.body.appendChild(root);
-  // Allow the export-only system font to settle before canvas captures.
+  // Wait for the actual Noto Sans JP faces used by the document, including heavy headings.
+  if(document.fonts){
+   await Promise.all([400,500,600,700,800,900].map(w=>document.fonts.load(w+' 24px \"Noto Sans JP\"','日本語企画資料')));
+   await document.fonts.ready;
+  }
   await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   await Promise.all([...root.querySelectorAll('img')].map(img=>img.complete?Promise.resolve():new Promise(resolve=>{img.onload=resolve;img.onerror=resolve})));
   const safe=(state.client||'108_STUDIO').replace(/[\\/:*?"<>|]/g,'_').trim();
@@ -585,8 +589,8 @@ async function downloadPdfDirect(){
     onclone:doc=>{
      const captureRoot=doc.querySelector('.pdf-direct-root');
      if(captureRoot){captureRoot.style.position='absolute';captureRoot.style.left='0';captureRoot.style.top='0';}
-     // Avoid html2canvas loading remote Noto Sans JP subset faces for this capture.
-     const pdfFontStyle=doc.createElement('style');pdfFontStyle.textContent=".pdf-direct-root,.pdf-direct-root *{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic','Meiryo',sans-serif!important;font-variant-ligatures:none!important}";doc.head.appendChild(pdfFontStyle);
+     // Preserve Noto Sans JP in the cloned capture document.
+     const pdfFontStyle=doc.createElement('style');pdfFontStyle.textContent=".pdf-direct-root,.pdf-direct-root *{font-family:'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif!important;font-variant-ligatures:none!important}";doc.head.appendChild(pdfFontStyle);
     }
    });
    if(canvas.width<100||canvas.height<100)throw new Error((i+1)+'ページ目の画像化に失敗しました');
