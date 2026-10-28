@@ -9,3 +9,6 @@ v0.5.23: AI文章編集は短縮一辺倒を廃止。原文の情報の範囲内
 ## v0.5.24
 - 企画プレビューの余白・背景をダブルクリックすると該当企画の編集画面を開きます。
 - 文字の直接編集、画像操作、リンククリックは従来どおりです。
+
+
+v0.5.26: Slack import rendering guard, pageOrder reconciliation and visible page count verification.
