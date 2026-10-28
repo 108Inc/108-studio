@@ -109,6 +109,34 @@ def is_final_thread(text):
     return bool(re.search(r'最終\s*確定\s*企画', text or ''))
 
 LOGIN = '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>108 STUDIO | ログイン</title><script src="https://accounts.google.com/gsi/client" async defer></script><style>body{background:#f2f4f7;color:#18233a;font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100dvh;margin:0;padding:16px;box-sizing:border-box}.box{box-sizing:border-box;width:100%;background:white;border:1px solid #e2e5ec;border-radius:18px;padding:clamp(20px,6vw,42px);max-width:420px;text-align:center;box-shadow:0 10px 50px #14203a10}h1{letter-spacing:.1em}p{color:#65718a;line-height:1.7}#btn{display:flex;justify-content:center;margin:26px 0;min-height:44px}#msg{color:#b13046;white-space:pre-line;line-height:1.6;font-size:14px}#retry{display:none;margin:14px auto;border:0;border-radius:8px;background:#152440;color:white;padding:12px 20px;font-size:14px;cursor:pointer}</style></head><body><div class="box"><h1>108 STUDIO</h1><p>社内向け企画資料エディタ<br>許可されたGoogleアカウントでログインしてください。</p><div id="btn"></div><p id="msg" role="status" aria-live="polite"></p><button id="retry" type="button">再読み込みして確認</button></div><script>\nconst cid=__CLIENT_ID__,msg=document.getElementById(\'msg\'),retry=document.getElementById(\'retry\');\nretry.addEventListener(\'click\',()=>location.reload());\nasync function checkSession(){const r=await fetch(\'/api/me\',{credentials:\'include\',cache:\'no-store\'});if(!r.ok)return false;const j=await r.json();return !!j.email;}\nasync function onCredential(response){msg.textContent=\'ログインを確認しています…\';retry.style.display=\'none\';try{if(!response||!response.credential)throw Error(\'Googleの認証情報を受け取れませんでした\');const res=await fetch(\'/api/login\',{method:\'POST\',credentials:\'include\',cache:\'no-store\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({credential:response.credential})});const j=await res.json();if(!res.ok)throw Error(j.error||\'ログインに失敗しました\');if(!await checkSession())throw Error(\'ログインは成功しましたが、ブラウザにログイン情報を保存できませんでした。Safari/Chromeで直接開き、Cookieを許可して再試行してください。\');location.replace(\'/\');}catch(e){msg.textContent=e.message||\'ログインに失敗しました\';retry.style.display=\'block\';}}\nfunction initialize(){if(!cid){msg.textContent=\'管理者によるログイン設定が必要です\';return;}if(!window.google||!google.accounts||!google.accounts.id){msg.textContent=\'Googleログインを読み込めませんでした。Safari/Chromeで開き直してください。\';retry.style.display=\'block\';return;}google.accounts.id.initialize({client_id:cid,callback:onCredential,ux_mode:\'popup\'});google.accounts.id.renderButton(document.getElementById(\'btn\'),{theme:\'outline\',size:\'large\',text:\'signin_with\',width:Math.min(290,window.innerWidth-75)});}\nwindow.addEventListener(\'load\',initialize);\n</script></body></html>'
+
+# Chromium renders native text and links, avoiding html2canvas's Japanese glyph corruption.
+def render_native_pdf(markup):
+    from playwright.sync_api import sync_playwright
+    if not isinstance(markup,str) or len(markup.encode('utf-8'))>14_000_000:
+        raise ValueError('PDF資料が大きすぎます（14MB以内）')
+    if re.search(r'<\s*(script|iframe|object|embed|form|base)\b',markup,re.I):
+        raise ValueError('PDF用HTMLに使用できない要素が含まれています')
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch(headless=True,executable_path=(os.getenv('STUDIO_CHROMIUM_PATH') or ('/usr/bin/chromium' if Path('/usr/bin/chromium').exists() else None)),args=['--no-sandbox','--disable-dev-shm-usage'])
+        try:
+            page=browser.new_page(viewport={'width':794,'height':1123},device_scale_factor=1)
+            # Do not allow the PDF worker to fetch arbitrary external URLs.
+            def filter_request(route):
+                u=urllib.parse.urlparse(route.request.url)
+                if u.scheme=='data' or (u.scheme=='https' and u.hostname in ('fonts.googleapis.com','fonts.gstatic.com')):
+                    return route.continue_()
+                return route.abort()
+            page.route('**/*',filter_request)
+            page.set_content(markup,wait_until='domcontentloaded',timeout=25000)
+            page.evaluate('document.fonts.ready')
+            page.locator('.page').first.wait_for(timeout=10000)
+            count=page.locator('.page').count()
+            if count<1 or count>60:raise ValueError('PDFページ数は1〜60ページにしてください')
+            # Print CSS preserves backgrounds and all <a href> links as PDF annotations.
+            return page.pdf(format='A4',print_background=True,prefer_css_page_size=True,display_header_footer=False)
+        finally:browser.close()
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs): super().__init__(*args, directory=str(ROOT / 'static'), **kwargs)
     def end_headers(self):
@@ -190,6 +218,24 @@ class Handler(SimpleHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == '/api/logout':
             self.send_response(200); self.send_header('Set-Cookie', 'studio_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'); self.end_headers(); return
+        if path == '/api/export-pdf':
+            if not current_user(self.headers.get('Cookie','')):
+                return self.send_json({'error':'ログインが必要です'},401)
+            origin=self.headers.get('Origin','')
+            host=self.headers.get('Host','')
+            if origin and origin not in ('https://'+host,'http://'+host):
+                return self.send_json({'error':'origin mismatch'},403)
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if not 0<length<=14_000_000:raise ValueError('PDF資料が大きすぎます')
+                payload=json.loads(self.rfile.read(length))
+                pdf=render_native_pdf(payload.get('html',''))
+                self.send_bytes(pdf,200,'application/pdf')
+            except ValueError as e:return self.send_json({'error':str(e)},422)
+            except Exception as e:
+                print('PDF export failed:',repr(e),flush=True)
+                return self.send_json({'error':'PDFの生成に失敗しました。Renderのログをご確認ください'},500)
+            return
         if path == '/api/tiktok-thumbnail':
             if not current_user(self.headers.get('Cookie', '')):
                 return self.send_json({'error': 'ログインが必要です'}, 401)

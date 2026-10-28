@@ -3,7 +3,7 @@ services:
     name: 108-studio
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && python -m playwright install --with-deps chromium
     startCommand: python server.py
     envVars:
       - key: STUDIO_GOOGLE_CLIENT_ID
