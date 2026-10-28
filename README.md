@@ -33,3 +33,10 @@ Slack Appをワークスペースにインストールし、Bot Token Scopesと�
 - PDFページ番号を削除。
 - 全ページ右下に108ロゴのみを控えめに表示（幅30px）。
 - その他の編集、Slack、PDF出力機能は変更なし。
+
+
+## v0.5.4 footer correction
+- No page numbers in proposal pages, cover, or dividers; small 108 logo remains at lower right.
+- Removes legacy page-number footer elements in the rendered preview and print.
+- Suppresses CSS print margin-box headers/footers in browsers that support the feature.
+- If a browser still adds its own print page number, disable browser print headers/footers; applications cannot override all browser settings.
