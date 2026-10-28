@@ -26,3 +26,6 @@ v0.5.27: Fix workspace ReferenceError on idea page render (var function scope); 
 
 
 v0.5.29: PC editing view uses independent scrolling in sidebar and page preview, keeping the page visible while adjusting sidebar controls. Print and mobile layouts unchanged.
+
+
+v0.5.30: 資料内AIボタンを左側の編集フォームから独立させ、直接AI比較画面を開くよう修正。
