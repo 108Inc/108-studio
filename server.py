@@ -1,5 +1,5 @@
 """108 STUDIO prototype: Google ID token login with email allowlist."""
-import os, json, time, hmac, hashlib, base64, http.cookies, urllib.request, urllib.parse, io
+import os, json, time, hmac, hashlib, base64, http.cookies, urllib.request, urllib.parse, io, re
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -42,6 +42,27 @@ def verify_token(token):
     if email not in ALLOWED: raise ValueError('このアカウントには利用権限がありません')
     return email
 
+SLACK_TOKEN = os.getenv('STUDIO_SLACK_BOT_TOKEN', '').strip()
+
+def slack_api(method, params=None):
+    if not SLACK_TOKEN: raise ValueError('Slack連携が未設定です。Renderに STUDIO_SLACK_BOT_TOKEN を設定してください')
+    url = 'https://slack.com/api/' + method
+    if params: url += '?' + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + SLACK_TOKEN, 'Accept': 'application/json', 'User-Agent': '108-STUDIO/0.5.0'})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp: data = json.load(resp)
+    except Exception as e: raise ValueError('Slackへの接続に失敗しました') from e
+    if not data.get('ok'):
+        error = data.get('error','unknown_error')
+        if error in ('not_in_channel','channel_not_found'): raise ValueError('チャンネルを読み取れません。Slackアプリをチャンネルに招待してください')
+        if error == 'missing_scope': raise ValueError('Slackアプリの権限が不足しています。channels:history / groups:history / channels:read / groups:read を確認してください')
+        raise ValueError('Slack APIエラー: ' + str(error))
+    return data
+
+def is_final_thread(text):
+    import re
+    return bool(re.search(r'【\s*最終確定企画\s*[｜|]\s*[^】]+】', text or ''))
+
 LOGIN = '''<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>108 STUDIO | ログイン</title><script src="https://accounts.google.com/gsi/client" async defer></script><style>body{background:#f2f4f7;color:#18233a;font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0}.box{background:white;border:1px solid #e2e5ec;border-radius:18px;padding:42px;max-width:420px;text-align:center;box-shadow:0 10px 50px #14203a10}h1{letter-spacing:.1em}p{color:#65718a;line-height:1.7}#btn{display:flex;justify-content:center;margin:26px 0}#msg{color:#b13046}</style><div class="box"><h1>108 STUDIO</h1><p>社内向け企画資料エディタ<br>許可されたGoogleアカウントでログインしてください。</p><div id="btn"></div><p id="msg"></p></div><script>const cid=__CLIENT_ID__;const msg=document.getElementById('msg');if(!cid){msg.textContent='管理者によるログイン設定が必要です'}else{window.onload=()=>{google.accounts.id.initialize({client_id:cid,callback:async r=>{try{const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:r.credential})});const j=await res.json();if(!res.ok)throw Error(j.error||'ログイン失敗');location.href='/'}catch(e){msg.textContent=e.message}}});google.accounts.id.renderButton(document.getElementById('btn'),{theme:'outline',size:'large',text:'signin_with',width:290})}}</script></html>'''
 
 class Handler(SimpleHTTPRequestHandler):
@@ -66,6 +87,51 @@ class Handler(SimpleHTTPRequestHandler):
             if path in ('/', '/index.html'):
                 return self.send_bytes(LOGIN.replace('__CLIENT_ID__', json.dumps(CLIENT_ID)).encode())
             return self.send_json({'error': 'ログインが必要です'}, 401)
+        if path.startswith('/api/slack/'):
+            try:
+                args = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                channel = args.get('channel',[''])[0]
+                if path == '/api/slack/status': return self.send_json({'connected':bool(SLACK_TOKEN)})
+                if path == '/api/slack/channels':
+                    channels=[]; cursor=''
+                    for _ in range(5):
+                        q={'types':'public_channel,private_channel','limit':200,'exclude_archived':'true'}
+                        if cursor: q['cursor']=cursor
+                        result=slack_api('conversations.list',q)
+                        channels += [{'id':x['id'],'name':x.get('name','')} for x in result.get('channels',[]) if x.get('is_member')]
+                        cursor=result.get('response_metadata',{}).get('next_cursor','')
+                        if not cursor: break
+                    return self.send_json({'channels':channels})
+                if not re.fullmatch(r'[CG][A-Z0-9]{7,20}',channel): return self.send_json({'error':'SlackチャンネルIDを指定してください'},400)
+                if path == '/api/slack/threads':
+                    items=[]; cursor=''
+                    for _ in range(5):
+                        q={'channel':channel,'limit':200}
+                        if cursor: q['cursor']=cursor
+                        result=slack_api('conversations.history',q)
+                        for m in result.get('messages',[]):
+                            if is_final_thread(m.get('text','')) and not m.get('thread_ts'):
+                                items.append({'ts':m['ts'],'title':m.get('text','').split('\n')[0][:100], 'replies':m.get('reply_count',0)})
+                        cursor=result.get('response_metadata',{}).get('next_cursor','')
+                        if not cursor: break
+                    return self.send_json({'threads':items})
+                if path == '/api/slack/replies':
+                    ts=args.get('ts',[''])[0]
+                    if not re.fullmatch(r'\d{10,12}\.\d{6}',ts): return self.send_json({'error':'スレッドIDが不正です'},400)
+                    items=[]; cursor=''
+                    for _ in range(10):
+                        q={'channel':channel,'ts':ts,'limit':200}
+                        if cursor: q['cursor']=cursor
+                        result=slack_api('conversations.replies',q)
+                        items.extend(result.get('messages',[]))
+                        cursor=result.get('response_metadata',{}).get('next_cursor','')
+                        if not cursor: break
+                    # Parent message is not an idea. Skip bot/system messages and deleted replies.
+                    ideas=[{'ts':m['ts'],'text':m.get('text','')} for m in items if m.get('ts')!=ts and m.get('text','').strip() and m.get('subtype') not in ('message_deleted','channel_join','channel_leave')]
+                    return self.send_json({'messages':ideas})
+                return self.send_json({'error':'not found'},404)
+            except ValueError as e: return self.send_json({'error':str(e)},400)
+            except Exception: return self.send_json({'error':'Slack取得中にエラーが発生しました'},502)
         if path == '/': self.path = '/index.html'
         return super().do_GET()
     def do_POST(self):

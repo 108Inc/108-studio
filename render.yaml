@@ -12,3 +12,5 @@ services:
         generateValue: true
       - key: STUDIO_ALLOWED_EMAILS
         sync: false
+      - key: STUDIO_SLACK_BOT_TOKEN
+        sync: false
