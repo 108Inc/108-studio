@@ -233,13 +233,15 @@ class Handler(SimpleHTTPRequestHandler):
                 if not key: raise ValueError('OPENAI_API_KEY が設定されていません')
                 label={'title':'企画タイトル','content':'企画内容','shoot':'撮影・演出イメージ','aim':'狙い・意図','extra':'補足','freeNote':'自由記入欄'}[field]
                 instructions=(
-                    'あなたは108 STUDIOのSNS企画書の簡潔な編集者です。目的はクライアントが一読で企画を理解できる文章にすること。'
-                    '文章を豪華にする、丁寧に膨らませる、背景説明を補うことは禁止。'
-                    '原文より短く、端的で自然な日本語にする。原文がすでに明快ならほぼそのまま返す。'
-                    '重複、冗長な修飾、不要な前置き、抽象的な美辞麗句を削る。'
-                    '企画の核、面白さ、出演メンバー、音源、撮影手順、固有名詞、数値、URLなど必要な事実は保持する。'
-                    '原文にない演出、狙い、提案、見出し、箇条書きを足さない。'
-                    '「'+label+'」の文章のみを返し、解説・引用符・挨拶は付けない。'
+                    'あなたは108 STUDIOのSNS企画書の文章編集者です。目的はクライアントが一読で内容と撮影イメージを理解できる、読みやすい文章に整えること。'
+                    '短縮そのものを目的にしない。原文が短く説明不足なら、原文に含まれる情報だけを自然につなぎ、少し長くしてよい。'
+                    '原文が長ければ重複や冗長な表現を削る。適切な長さなら大きく変えない。'
+                    '読みやすい行数を優先する。通常は1〜3文程度、意味の区切りで改行する。タイトルは原則1行で簡潔に。'
+                    '撮影手順が複数ある場合は必要な順序を保持する。読みやすさのための改行は可。'
+                    '原文にない事実、出演者、演出、撮影工程、狙い、固有名詞、数値、URLを創作・推測・追加しない。'
+                    '企画の核、面白さ、出演メンバー、音源、撮影手順、固有名詞、数値、URLは保持する。'
+                    '過剰に丁寧な表現、抽象的な美辞麗句、余計な前置きは使わない。'
+                    '「'+label+'」の修正文のみ返し、解説・引用符・挨拶は付けない。'
                 )
                 def ask_ai(system_text):
                     payload={'model':os.environ.get('STUDIO_AI_MODEL','gpt-4.1-mini'),'messages':[
@@ -250,10 +252,9 @@ class Handler(SimpleHTTPRequestHandler):
                     return result['choices'][0]['message']['content'].strip()
                 edited=ask_ai(instructions)
                 if not edited: raise ValueError('AIの出力が空でした')
-                # Do not present an expanded draft: one stricter retry, then retain original.
-                if len(edited)>len(original):
-                    edited=ask_ai(instructions+'絶対条件：出力文字数は原文の'+str(len(original))+'文字以下。短縮できなければ原文をそのまま返す。')
-                if not edited or len(edited)>len(original):
+                # A short original may benefit from a slightly longer, clearer draft.
+                # Preserve the user's original for side-by-side review in the UI.
+                if not edited.strip():
                     edited=original
                 return self.send_json({'text':edited})
             except ValueError as exc: return self.send_json({'error':str(exc)},422)
