@@ -29,3 +29,9 @@ v0.5.29: PC editing view uses independent scrolling in sidebar and page preview,
 
 
 v0.5.30: 資料内AIボタンを左側の編集フォームから独立させ、直接AI比較画面を開くよう修正。
+
+
+v0.5.31: A4 print page break and blank free-workspace correction.
+
+
+v0.5.32: Slack取り込みをテキスト/PDF取り込みより上に移動。機能・IDは維持。
