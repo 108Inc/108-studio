@@ -42,6 +42,45 @@ def verify_token(token):
     if email not in ALLOWED: raise ValueError('このアカウントには利用権限がありません')
     return email
 
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '').strip()
+OPENAI_MODEL = os.getenv('STUDIO_AI_MODEL', 'gpt-4.1-mini').strip()
+AI_FIELDS = ('title', 'category', 'url', 'members', 'sound', 'part', 'location', 'content', 'shoot', 'aim', 'extra')
+
+def polish_ideas(ideas):
+    if not OPENAI_API_KEY:
+        raise ValueError('AI文章整形が未設定です。Renderの環境変数 OPENAI_API_KEY を登録してください。原文は取り込んでいません。')
+    instruction = ("あなたは108 STUDIOのクライアント提出用SNS企画書の文章校正者です。"
+      "入力は最終確定済みの企画です。企画を考案・追加・分割・統合・評価せず、意図や面白さを変えないこと。"
+      "相談・詰めたいこと・質問・社内FB・人選理由など提出不要の情報を除外する。"
+      "話し言葉、重複、冗長な表現を整理し、自然な日本語で簡潔にする。"
+      "出演者、音源、使用箇所、場所・衣装、撮影手順、企画の狙い、数値、固有名詞、URLを創作・変更・省略しない。"
+      "記載のない内容は補わない。空欄は空欄のまま。"
+      "titleは冒頭の装飾記号を除去。category、url、members、sound、part、locationは入力値を厳密に維持。"
+      "content、shoot、aim、extraは元情報を保持して整える。"
+      "入力配列と同じ件数・同じ順序でJSONを返す。")
+    schema = {'type':'object','additionalProperties':False,'required':['ideas'],
+      'properties':{'ideas':{'type':'array','items':{'type':'object','additionalProperties':False,
+        'required':list(AI_FIELDS),'properties':{k:{'type':'string'} for k in AI_FIELDS}}}}}
+    payload={'model':OPENAI_MODEL,'temperature':0,'response_format':{'type':'json_schema','json_schema':{'name':'studio_polished_ideas','strict':True,'schema':schema}},
+      'messages':[{'role':'system','content':instruction},{'role':'user','content':json.dumps({'ideas':ideas},ensure_ascii=False)}]}
+    req=urllib.request.Request('https://api.openai.com/v1/chat/completions',data=json.dumps(payload,ensure_ascii=False).encode(),
+      headers={'Authorization':'Bearer '+OPENAI_API_KEY,'Content-Type':'application/json'},method='POST')
+    try:
+        with urllib.request.urlopen(req,timeout=65) as resp: data=json.load(resp)
+        answer=json.loads(data['choices'][0]['message']['content'])['ideas']
+    except Exception as exc:
+        raise ValueError('AI文章整形に失敗しました。企画は登録されていません。しばらくして再試行してください。') from exc
+    if not isinstance(answer,list) or len(answer)!=len(ideas):
+        raise ValueError('AIの出力件数が一致しません。登録は行っていません。')
+    for old,new in zip(ideas,answer):
+        if not isinstance(new,dict) or any(not isinstance(new.get(k),str) for k in AI_FIELDS):
+            raise ValueError('AIの出力形式が不正です。登録は行っていません。')
+        for k in ('category','url','members','sound','part','location'):
+            if new[k] != old[k]:
+                raise ValueError('AIが確定情報を変更したため登録を中止しました。')
+        if not new['title'].strip(): raise ValueError('AIが企画名を失ったため登録を中止しました。')
+    return answer
+
 SLACK_TOKEN = os.getenv('STUDIO_SLACK_BOT_TOKEN', '').strip()
 
 def slack_api(method, params=None):
@@ -172,6 +211,23 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({'thumbnail': thumbnail, 'source': 'TikTok oEmbed'})
             except Exception:
                 return self.send_json({'error': 'TikTokからサムネイルを取得できませんでした。動画の公開状態やTikTok側の制限が原因の場合があります。画像を手動で指定してください。'}, 422)
+        if path == '/api/ai/polish':
+            if not current_user(self.headers.get('Cookie','')): return self.send_json({'error':'ログインが必要です'},401)
+            origin=self.headers.get('Origin','')
+            if origin and origin not in ('https://'+self.headers.get('Host',''),'http://localhost:'+str(PORT)):
+                return self.send_json({'error':'origin mismatch'},403)
+            try:
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=150000: raise ValueError('入力が大きすぎます')
+                body=json.loads(self.rfile.read(size))
+                ideas=body.get('ideas')
+                if not isinstance(ideas,list) or not 1<=len(ideas)<=20: raise ValueError('1〜20件の企画を選択してください')
+                for idea in ideas:
+                    if not isinstance(idea,dict) or any(not isinstance(idea.get(k),str) for k in AI_FIELDS):
+                        raise ValueError('企画データが不正です')
+                return self.send_json({'ideas':polish_ideas(ideas)})
+            except ValueError as exc: return self.send_json({'error':str(exc)},422)
+            except Exception: return self.send_json({'error':'AI文章整形に失敗しました。登録は行っていません。'},502)
         if path == '/api/extract-pdf':
             if not current_user(self.headers.get('Cookie', '')): return self.send_json({'error':'ログインが必要です'},401)
             origin = self.headers.get('Origin', '')

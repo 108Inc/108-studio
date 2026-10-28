@@ -1,5 +1,3 @@
-108 STUDIO v0.5.12 - Category color fix for main
-
-Fixes the category selector update using change events and applies the correct page background directly to each idea page, including supplemental pages. Song and meme x song use client color; meme uses pink. Dance projects use client color when category explicitly says song use or the sound field identifies original music.
-
-Unzip and upload the contents to GitHub main. Preserve your existing Render environment variables. Existing documents stored in the browser are not included in the ZIP.
+108 STUDIO v0.5.13 - Slack AI polish on import.
+Set OPENAI_API_KEY in Render Environment (server-side only). Optional STUDIO_AI_MODEL defaults to gpt-4.1-mini.
+AI fails closed; no registration on API error. Original Slack reply saved in browser document for comparison.
