@@ -3,9 +3,11 @@ services:
     name: 108-studio
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt && python -m playwright install chromium
+    buildCommand: pip install -r requirements.txt && PLAYWRIGHT_BROWSERS_PATH=0 python -m playwright install chromium
     startCommand: python server.py
     envVars:
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: "0"
       - key: STUDIO_GOOGLE_CLIENT_ID
         sync: false
       - key: STUDIO_SESSION_SECRET

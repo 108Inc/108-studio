@@ -53,3 +53,8 @@ Chromium Playwright server-side PDF export. Render build installs Chromium; depl
 
 ## v0.5.42
 Render free runtime: install Chromium without --with-deps (root access unavailable). System shared libraries still required at runtime.
+
+
+## v0.5.43 Render Chromium path fix
+
+Playwright browser binaries are installed with PLAYWRIGHT_BROWSERS_PATH=0 inside the Python environment, and the same environment variable is configured at runtime. This avoids losing the browser from Render build cache paths.
