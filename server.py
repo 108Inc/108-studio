@@ -232,13 +232,29 @@ class Handler(SimpleHTTPRequestHandler):
                 key=os.environ.get('OPENAI_API_KEY','')
                 if not key: raise ValueError('OPENAI_API_KEY が設定されていません')
                 label={'title':'企画タイトル','content':'企画内容','shoot':'撮影・演出イメージ','aim':'狙い・意図','extra':'補足','freeNote':'自由記入欄'}[field]
-                payload={'model':os.environ.get('STUDIO_AI_MODEL','gpt-4.1-mini'),'messages':[
-                    {'role':'system','content':'あなたは108 STUDIOの企画書編集者です。入力された「'+label+'」の文章だけを、クライアント提出用に読みやすく簡潔に整えてください。企画内容、演出、固有名詞、人数、音源、手順、数値、URLを創作・変更・省略しない。相談事項を勝手に追加しない。文章のみ返す。'},
-                    {'role':'user','content':original}], 'temperature':0.2}
-                req=urllib.request.Request('https://api.openai.com/v1/chat/completions',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
-                with urllib.request.urlopen(req,timeout=45) as response: result=json.load(response)
-                edited=result['choices'][0]['message']['content'].strip()
+                instructions=(
+                    'あなたは108 STUDIOのSNS企画書の簡潔な編集者です。目的はクライアントが一読で企画を理解できる文章にすること。'
+                    '文章を豪華にする、丁寧に膨らませる、背景説明を補うことは禁止。'
+                    '原文より短く、端的で自然な日本語にする。原文がすでに明快ならほぼそのまま返す。'
+                    '重複、冗長な修飾、不要な前置き、抽象的な美辞麗句を削る。'
+                    '企画の核、面白さ、出演メンバー、音源、撮影手順、固有名詞、数値、URLなど必要な事実は保持する。'
+                    '原文にない演出、狙い、提案、見出し、箇条書きを足さない。'
+                    '「'+label+'」の文章のみを返し、解説・引用符・挨拶は付けない。'
+                )
+                def ask_ai(system_text):
+                    payload={'model':os.environ.get('STUDIO_AI_MODEL','gpt-4.1-mini'),'messages':[
+                        {'role':'system','content':system_text},
+                        {'role':'user','content':original}], 'temperature':0.1}
+                    req=urllib.request.Request('https://api.openai.com/v1/chat/completions',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
+                    with urllib.request.urlopen(req,timeout=45) as response: result=json.load(response)
+                    return result['choices'][0]['message']['content'].strip()
+                edited=ask_ai(instructions)
                 if not edited: raise ValueError('AIの出力が空でした')
+                # Do not present an expanded draft: one stricter retry, then retain original.
+                if len(edited)>len(original):
+                    edited=ask_ai(instructions+'絶対条件：出力文字数は原文の'+str(len(original))+'文字以下。短縮できなければ原文をそのまま返す。')
+                if not edited or len(edited)>len(original):
+                    edited=original
                 return self.send_json({'text':edited})
             except ValueError as exc: return self.send_json({'error':str(exc)},422)
             except Exception: return self.send_json({'error':'AI文章修正に失敗しました。元の文章は変更していません。'},502)
