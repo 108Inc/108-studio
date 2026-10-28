@@ -15,3 +15,11 @@ v0.5.26: Slack import rendering guard, pageOrder reconciliation and visible page
 
 
 v0.5.27: Fix workspace ReferenceError on idea page render (var function scope); preserve existing imported ideas.
+
+
+## v0.5.28
+- 編集タブ左側をSlack原文・画像位置調整に限定
+- クライアント設定は従来の左パネルを継続
+- 企画本文・タイトル・AI編集はプレビュー上の操作を維持
+- 重複する編集フォーム・ナビゲーション・サムネイル一括操作を編集タブで非表示
+- デスクトップ時の左右比率を約25:75に変更
