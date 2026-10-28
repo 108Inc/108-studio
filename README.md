@@ -35,3 +35,12 @@ v0.5.31: A4 print page break and blank free-workspace correction.
 
 
 v0.5.32: Slack取り込みをテキスト/PDF取り込みより上に移動。機能・IDは維持。
+
+
+## v0.5.33
+- PDF保存ボタンからブラウザ印刷ダイアログを開かずにPDFを直接ダウンロードします。
+- 初回にCDNから html2pdf.js を読み込むためネット接続が必要です。
+- PDFは画像ベースとなるため、文字の選択や参考動画リンクのクリックはできません。印刷方式に戻す場合は前版を使用してください。
+
+
+v0.5.34: PDF direct download retains clickable reference video links by adding jsPDF URI annotations over the thumbnail and reference link.
