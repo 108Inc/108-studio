@@ -48,5 +48,8 @@ v0.5.34: PDF direct download retains clickable reference video links by adding j
 
 v0.5.35: PDF export canvas source is rendered inside viewport (rather than at -10000px), preventing blank capture. Link annotations retained.
 
-## v0.5.41 PDF export
+## v0.5.42 PDF export
 Chromium Playwright server-side PDF export. Render build installs Chromium; deployment may take longer. PDF text and clickable links remain native.
+
+## v0.5.42
+Render free runtime: install Chromium without --with-deps (root access unavailable). System shared libraries still required at runtime.
