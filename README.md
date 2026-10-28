@@ -44,3 +44,6 @@ v0.5.32: Slack取り込みをテキスト/PDF取り込みより上に移動。�
 
 
 v0.5.34: PDF direct download retains clickable reference video links by adding jsPDF URI annotations over the thumbnail and reference link.
+
+
+v0.5.35: PDF export canvas source is rendered inside viewport (rather than at -10000px), preventing blank capture. Link annotations retained.
