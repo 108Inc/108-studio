@@ -294,6 +294,14 @@ function fieldEditor(){
  const heading=document.createElement('p');heading.className='hint';heading.textContent='選択中：'+(d.title||'無題の企画');root.append(heading);
  const details=document.createElement('details');details.className='side-section';const summary=document.createElement('summary');summary.textContent='Slack原文を確認';details.append(summary);
  const pre=document.createElement('pre');pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;font-size:12px';pre.textContent=d.originalSlackText||'この企画にはSlack原文が保存されていません。';details.append(pre);root.append(details);
+ const urlSection=document.createElement('section');urlSection.className='side-section';
+ const urlHeading=document.createElement('h3');urlHeading.textContent='参考動画リンクを編集';urlSection.append(urlHeading);
+ const urlHint=document.createElement('p');urlHint.className='hint';urlHint.textContent='Slackから取り込んだURLを変更できます。PDFの「クリックで参考へ」にも反映されます。';urlSection.append(urlHint);
+ const urlInput=document.createElement('input');urlInput.type='url';urlInput.placeholder='https://www.tiktok.com/...';urlInput.value=d.url||'';urlInput.style.cssText='width:100%;min-width:0;box-sizing:border-box;padding:10px;border:1px solid #cad3e2;border-radius:7px;font-size:13px';urlSection.append(urlInput);
+ const urlActions=document.createElement('div');urlActions.style.cssText='display:flex;gap:8px;margin-top:8px;flex-wrap:wrap';
+ const urlSave=document.createElement('button');urlSave.type='button';urlSave.textContent='リンクを保存';urlSave.onclick=()=>{const raw=urlInput.value.trim();if(raw&&!urlSafe(raw)){alert('https:// または http:// で始まるURLを入力してください');return}d.url=raw;save();renderPages();fieldEditor()};
+ const urlOpen=document.createElement('button');urlOpen.type='button';urlOpen.className='secondary';urlOpen.textContent='リンクを開く';urlOpen.onclick=()=>{const link=urlSafe(urlInput.value.trim());if(!link){alert('有効なURLを入力してください');return}window.open(link,'_blank','noopener,noreferrer')};
+ urlActions.append(urlSave,urlOpen);urlSection.append(urlActions);root.append(urlSection);
  const section=document.createElement('section');section.className='side-section';const h=document.createElement('h3');h.textContent='画像の位置調整';section.append(h);
  const hint=document.createElement('p');hint.className='hint';hint.textContent='画像の追加・差し替えは右側の資料上で行えます。ここでは参考動画サムネイルの表示位置と拡大率を調整します。';section.append(hint);
  for(const [key,title,min,max] of [['thumbZoom','拡大率',100,220],['thumbX','左右位置',0,100],['thumbY','上下位置',0,100]]){
