@@ -438,22 +438,8 @@ function slackIdeaFromMessage(m){
  return idea;
 }
 function groupSlackProposalMessages(messages){
- // Each Slack reply is an independent proposal by default. Only merge a reply
- // that clearly consists of a continuation/field fragment.
- const groups=[];
- const fieldOnly=/^(?:[＜<【]\s*(?:出演メンバー|参考動画|参考ミーム|音源|使用箇所|場所|衣装|企画内容|企画概要|撮影[・／\/]|狙い|意図)[＞>】]|(?:出演メンバー|音源|使用箇所|撮影方法|場所)\s*[:：]|(?:補足|追記|※)\s*[:：])/;
- for(const m of messages){
-  const raw=normalizeSlackText(m.text||'').trim();
-  if(!raw)continue;
-  const first=raw.split(/\r?\n/).map(x=>x.trim()).find(Boolean)||'';
-  const isFragment=fieldOnly.test(first);
-  if(groups.length&&isFragment){
-   const prev=groups[groups.length-1];
-   prev.text+='\n'+raw;
-   prev.sourceTs.push(m.ts);
-  }else groups.push({...m,text:raw,sourceTs:[m.ts]});
- }
- return groups;
+ // Show every Slack reply as-is. Never merge or hide replies at the selection stage.
+ return messages.filter(m=>m&&String(m.text||'').trim()).map(m=>({...m}));
 }
 function slackAlreadyImported(m,idea){const normalized=normalizeSlackText(m.text||'').trim();return state.ideas.some(d=>(m.ts&&d.slackMessageTs===m.ts)||(d.originalSlackText&&normalizeSlackText(d.originalSlackText).trim()===normalized)||(idea&&d.title===idea.title&&d.url&&idea.url&&d.url===idea.url))}
 async function slackGET(path,params={}){const url=new URL(path,location.origin);Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,v));const r=await fetch(url,{credentials:'same-origin'});const j=await r.json();if(!r.ok)throw Error(j.error||'Slackの取得に失敗しました');return j}
