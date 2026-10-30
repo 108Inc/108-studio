@@ -464,7 +464,8 @@ function slackIdeaFromMessage(m){
   if(/^(音源|使用音源)$/.test(h))return 'sound';
   if(/^(使用箇所|箇所)$/.test(h))return 'part';
   if(/^(場所|衣装|場所／衣装|場所\/衣装)$/.test(h))return 'location';
-  return 'skip';
+  // Timeline labels such as 【0:48〜0:50】 are content, not section breaks.
+  return /^[＜<〈]/.test(line)?'skip':null;
  };
  const titleLine=lines[0].replace(/^【\s*企画\s*(?:[①-⑳]|\d{1,2})\s*】\s*/,'').replace(/^(?:企画名|タイトル)\s*[:：]\s*/,'');
  idea.title=cleanTitle(titleLine).slice(0,120)||'Slack企画 '+(m.ts||'');
@@ -534,9 +535,18 @@ $('slack-import').onclick=async()=>{
  const candidates=selected.map(m=>({m,idea:slackIdeaFromMessage(m)}));
  const valid=candidates.filter(x=>x.idea);
  if(!valid.length){$('slack-msg').textContent='取り込める企画がありません。返信を再取得してください。';return}
- if(!confirm('選択した '+valid.length+'件を資料に追加します。\\n'+valid.map(x=>'・'+x.idea.title).join('\\n').slice(0,1300)+'\\n\\n既存のページや編集内容は変更しません。よろしいですか？'))return;
+ const updates=valid.filter(({m})=>state.ideas.some(d=>d.slackMessageTs===m.ts&&d.slackThreadTs===$('slack-thread').value));
+ const additions=valid.length-updates.length;
+ if(!confirm('新規追加 '+additions+'件／既存企画の再解析・更新 '+updates.length+'件を実行します。\\n'+valid.map(x=>'・'+x.idea.title).join('\\n').slice(0,1300)+'\\n\\n更新対象の企画名・本文・撮影方法・狙いなどはSlack原文で上書きします。画像・ページ設定は保持します。よろしいですか？'))return;
  const firstIndex=state.ideas.length;
- state.ideas.push(...valid.map(({m,idea})=>({...idea,originalSlackText:m.text,slackMessageTs:m.ts||'',slackThreadTs:$('slack-thread').value})));
+ for(const {m,idea} of valid){
+  const record={...idea,originalSlackText:m.text,slackMessageTs:m.ts||'',slackThreadTs:$('slack-thread').value};
+  const index=state.ideas.findIndex(d=>d.slackMessageTs===m.ts&&d.slackThreadTs===$('slack-thread').value);
+  if(index>=0){
+   const old=state.ideas[index];
+   state.ideas[index]={...old,...record,thumbnail:old.thumbnail,thumbX:old.thumbX,thumbY:old.thumbY,thumbZoom:old.thumbZoom,freeImages:old.freeImages,twoPages:old.twoPages};
+  }else state.ideas.push(record);
+ }
  syncPages();state.selected=state.ideas.length-1;
  state.selectedPage=state.pageOrder.findIndex(p=>p.kind==='idea'&&p.index===state.selected);
  try{
@@ -544,7 +554,7 @@ $('slack-import').onclick=async()=>{
   const visible=$('pages').querySelectorAll('[data-idea-index]').length;
   if(visible<state.ideas.length)throw Error('企画ページの描画に失敗しました。');
   $('slack-msg').className='notice ok';
-  $('slack-msg').textContent=(state.ideas.length-firstIndex)+'件を追加しました。既存の企画はそのままです。';
+  $('slack-msg').textContent=(state.ideas.length-firstIndex)+'件を追加、'+updates.length+'件をSlack原文から更新しました。';
   $('slack-preview').click();
  }catch(err){console.error('Slack import rendering failed',err);$('slack-msg').className='notice';$('slack-msg').textContent='企画は追加されましたが表示エラー：'+err.message}
 };
