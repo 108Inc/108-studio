@@ -450,27 +450,39 @@ function slackIdeaFromMessage(m){
  const raw=normalizeSlackText(m.text||'').trim();
  if(!raw)return null;
  const lines=raw.split(/\r?\n/).map(x=>normalize(x.trim())).filter(Boolean);
- const isHeader=x=>/^[<＜〈【\[]\s*(?:参考ミーム|参考動画|参考URL|参考リンク|出演メンバー|出演者|メンバー|音源|使用箇所|場所|衣装|企画概要|企画内容|撮影|狙い|人選理由|相談|評価|FB)\s*[>＞〉】\]]/.test(x);
- const isUrl=x=>/^(?:<)?https?:\/\//.test(x);
- // Title is determined independently of parseIdeas: never let a section heading
- // or the first line inside a section replace the original proposal heading.
- let title='';
- for(const line of lines){
-  const numbered=line.match(/^【\s*企画\s*(?:[①-⑳]|[0-9]{1,2})\s*】\s*(.+)$/);
-  if(numbered){title=numbered[1].trim();break}
-  const named=line.match(/^(?:[<＜〈【\[]\s*)?(?:企画名|企画タイトル|タイトル)(?:\s*[>＞〉】\]])?\s*[:：]?\s*(.+)$/);
-  if(named&&named[1]&&!isHeader(named[1])){title=named[1].trim();break}
+ if(!lines.length)return null;
+ const idea=blank();
+ const sectionKey=(line)=>{
+  const match=line.match(/^[<＜〈【\[]\s*([^>＞〉】\]]+)\s*[>＞〉】\]]\s*[:：]?\s*$/);
+  if(!match)return null;
+  const h=match[1].replace(/\s/g,'');
+  if(/^(参考ミーム|参考動画|参考URL|参考リンク|参考動画URL|参考)$/.test(h))return 'url';
+  if(/^(出演メンバー|出演者|メンバー)$/.test(h))return 'members';
+  if(/^(企画概要|企画内容|内容)$/.test(h))return 'content';
+  if(/^(撮影|撮影方法|撮影イメージ|撮影・演出イメージ|撮影／演出イメージ|撮影ポイント)$/.test(h))return 'shoot';
+  if(/^(狙い|狙い／ポイント|狙い\/ポイント|狙い・ポイント|狙い／意図|企画意図)$/.test(h))return 'aim';
+  if(/^(音源|使用音源)$/.test(h))return 'sound';
+  if(/^(使用箇所|箇所)$/.test(h))return 'part';
+  if(/^(場所|衣装|場所／衣装|場所\/衣装)$/.test(h))return 'location';
+  return 'skip';
+ };
+ const titleLine=lines[0].replace(/^【\s*企画\s*(?:[①-⑳]|\d{1,2})\s*】\s*/,'').replace(/^(?:企画名|タイトル)\s*[:：]\s*/,'');
+ idea.title=cleanTitle(titleLine).slice(0,120)||'Slack企画 '+(m.ts||'');
+ let section='content',beforeHeading=true;
+ for(let i=1;i<lines.length;i++){
+  const line=lines[i],key=sectionKey(line);
+  if(key){section=key;beforeHeading=false;continue}
+  if(/^https?:\/\//.test(line)){
+   if(!idea.url)idea.url=line.match(/https?:\/\/[^\s<>＜＞|]+/)?.[0]||line;
+   continue;
+  }
+  // Explanatory text following a reference URL belongs to the overview,
+  // not to the URL or member fields.
+  if(section==='url'){idea.content+=(idea.content?'\n':'')+line;continue}
+  if(section==='skip')continue;
+  const field=section==='members'?'members':section==='shoot'?'shoot':section==='aim'?'aim':section==='sound'?'sound':section==='part'?'part':section==='location'?'location':'content';
+  idea[field]+=(idea[field]?'\n':'')+line;
  }
- if(!title){
-  title=lines.find(x=>!isHeader(x)&&!isUrl(x)&&!/^(```|[-・●]\s|[①-⑳]\s|[0-9]+[.)．])/.test(x))||'';
- }
- title=cleanTitle(title).replace(/^【\s*企画\s*(?:[①-⑳]|[0-9]{1,2})\s*】\s*/,'').trim().slice(0,120);
- if(!title)title='Slack企画 '+(m.ts||'');
- const parsed=parseIdeas(raw,{single:true});
- const idea=parsed.length===1?parsed[0]:blank();
- idea.title=title;
- if(!parsed.length)idea.content=raw;
- if(!idea.url){const url=raw.match(/https?:\/\/[^\s<>＜＞|]+/);if(url)idea.url=url[0]}
  return idea;
 }
 function groupSlackProposalMessages(messages){
