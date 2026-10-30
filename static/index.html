@@ -437,6 +437,26 @@ function slackIdeaFromMessage(m){
  if(match)idea.url=match[0];
  return idea;
 }
+function groupSlackProposalMessages(messages){
+ const groups=[];
+ const heading=/^(?:【\\s*企画\\s*[①-⑳0-9]+\\s*】|(?:企画名|企画タイトル|タイトル)\\s*[:：]|【企画名】|＜企画名＞|<企画名>)/;
+ const field=/^(?:[＜<【]\\s*(?:出演メンバー|参考|音源|使用箇所|場所|衣装|企画内容|企画概要|撮影|狙い|意図)[＞>】]|[・•●\\-]|\\d+[.)、]|[①-⑳])/;
+ for(const m of messages){
+  const raw=normalizeSlackText(m.text||'').trim();
+  if(!raw)continue;
+  const first=raw.split(/\\r?\\n/).map(x=>x.trim()).find(Boolean)||'';
+  const explicit=heading.test(first);
+  const looksContinuation=field.test(first)||/^(?:ほかメンバー|撮影時|状況に応じて|人数|補足|追記|※)/.test(first);
+  if(groups.length&&!explicit&&(looksContinuation||!/^【企画[①-⑳0-9]+】/.test(first))){
+   const prev=groups[groups.length-1];
+   prev.text+='\\n'+raw;
+   prev.sourceTs.push(m.ts);
+  }else{
+   groups.push({...m,text:raw,sourceTs:[m.ts]});
+  }
+ }
+ return groups;
+}
 function slackAlreadyImported(m,idea){const normalized=normalizeSlackText(m.text||'').trim();return state.ideas.some(d=>(m.ts&&d.slackMessageTs===m.ts)||(d.originalSlackText&&normalizeSlackText(d.originalSlackText).trim()===normalized)||(idea&&d.title===idea.title&&d.url&&idea.url&&d.url===idea.url))}
 async function slackGET(path,params={}){const url=new URL(path,location.origin);Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,v));const r=await fetch(url,{credentials:'same-origin'});const j=await r.json();if(!r.ok)throw Error(j.error||'Slackの取得に失敗しました');return j}
 async function loadSlackChannels(){const selected=profiles.find(p=>p.id===activeProfileId)?.channel||$('client-slack-channel').value;try{const data=await slackGET('/api/slack/channels');slackChannels=data.channels;const el=$('client-slack-channel');el.replaceChildren();el.add(new Option('未設定',''));for(const c of slackChannels)el.add(new Option('#'+c.name,c.id));if(selected&&!slackChannels.some(c=>c.id===selected))el.add(new Option('登録済みのチャンネル（現在アクセス不可）',selected));el.value=selected;$('slack-msg').textContent='Slackチャンネルを取得しました'}catch(e){$('slack-msg').textContent=e.message;const el=$('client-slack-channel');if(selected&&!Array.from(el.options).some(x=>x.value===selected))el.add(new Option('登録済みチャンネル',selected));el.value=selected}}
@@ -457,7 +477,7 @@ $('slack-preview').onclick=async()=>{
  const channel=profiles.find(p=>p.id===activeProfileId)?.channel,ts=$('slack-thread').value;
  if(!channel||!ts){$('slack-msg').textContent='クライアントと確定企画スレッドを選んでください';return}
  try{
-  const data=await slackGET('/api/slack/replies',{channel,ts});slackMessages=data.messages;
+  const data=await slackGET('/api/slack/replies',{channel,ts});slackMessages=groupSlackProposalMessages(data.messages);
   const list=$('slack-preview-list');list.replaceChildren();let available=0,already=0,invalid=0;
   slackMessages.forEach((m,i)=>{
    const idea=slackIdeaFromMessage(m),imported=idea&&slackAlreadyImported(m,idea);
