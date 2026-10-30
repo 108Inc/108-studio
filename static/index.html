@@ -449,22 +449,28 @@ let slackChannels=[];let slackMessages=[];
 function slackIdeaFromMessage(m){
  const raw=normalizeSlackText(m.text||'').trim();
  if(!raw)return null;
- const linesForTitle=raw.split(/\r?\n/).map(x=>normalize(x.trim())).filter(Boolean);
- const fieldHeader=/^[<＜〈【\[]\s*(?:参考ミーム|参考動画|参考URL|参考リンク|出演メンバー|出演者|音源|使用箇所|場所|衣装|企画概要|企画内容|撮影|狙い|人選理由|相談|評価|FB)\s*[>＞〉】\]]/;
- const namedTitle=linesForTitle.map(x=>titleLine(x)).find(Boolean);
- const plainTitle=linesForTitle.find(x=>!fieldHeader.test(x)&&!/^https?:\/\/|^[-・●]\s|^[①-⑳]\s|^\d+[.)．]|^```/.test(x));
- const preferredTitle=(namedTitle||plainTitle||'').replace(/^[<＜〈【\[]\s*(?:企画名|タイトル)\s*[>＞〉】\]]\s*[:：]?\s*/,'').trim();
- const parsed=parseIdeas(raw,{single:true});
- if(parsed.length===1){const idea=parsed[0];if(preferredTitle&&(/^(?:参考ミーム|参考動画|参考URL|出演メンバー)/.test(idea.title)||/^https?:/.test(idea.title)))idea.title=cleanTitle(preferredTitle).slice(0,120);if(/^https?:\/\//.test(idea.title)){const lines=raw.split(/\r?\n/).map(x=>normalize(x.trim())).filter(Boolean);const named=lines.find(x=>titleLine(x))||lines.find(x=>!/^https?:\/\/|^<|^＜|^【(?:参考|撮影|出演|音源|狙い)/.test(x));idea.title=named?(titleLine(named)||cleanTitle(named)).slice(0,120):'参考動画の企画';}return idea;}
- // A Slack reply can contain a heading-only first line, rich formatting, or
- // a different field order. Keep it importable instead of hiding it.
  const lines=raw.split(/\r?\n/).map(x=>normalize(x.trim())).filter(Boolean);
- const candidate=preferredTitle||lines.find(x=>!/^(```|https?:\/\/|<[^>]+>|＜[^＞]+＞|【(?:参考|撮影|出演|音源|狙い|使用|場所))/.test(x))||lines[0];
- const idea=blank();
- idea.title=cleanTitle(candidate).slice(0,120)||'Slack返信 '+(m.ts||'');
- idea.content=raw;
- const match=raw.match(/https?:\/\/[^\s<>＜＞|]+/);
- if(match)idea.url=match[0];
+ const isHeader=x=>/^[<＜〈【\[]\s*(?:参考ミーム|参考動画|参考URL|参考リンク|出演メンバー|出演者|メンバー|音源|使用箇所|場所|衣装|企画概要|企画内容|撮影|狙い|人選理由|相談|評価|FB)\s*[>＞〉】\]]/.test(x);
+ const isUrl=x=>/^(?:<)?https?:\/\//.test(x);
+ // Title is determined independently of parseIdeas: never let a section heading
+ // or the first line inside a section replace the original proposal heading.
+ let title='';
+ for(const line of lines){
+  const numbered=line.match(/^【\s*企画\s*(?:[①-⑳]|[0-9]{1,2})\s*】\s*(.+)$/);
+  if(numbered){title=numbered[1].trim();break}
+  const named=line.match(/^(?:[<＜〈【\[]\s*)?(?:企画名|企画タイトル|タイトル)(?:\s*[>＞〉】\]])?\s*[:：]?\s*(.+)$/);
+  if(named&&named[1]&&!isHeader(named[1])){title=named[1].trim();break}
+ }
+ if(!title){
+  title=lines.find(x=>!isHeader(x)&&!isUrl(x)&&!/^(```|[-・●]\s|[①-⑳]\s|[0-9]+[.)．])/.test(x))||'';
+ }
+ title=cleanTitle(title).replace(/^【\s*企画\s*(?:[①-⑳]|[0-9]{1,2})\s*】\s*/,'').trim().slice(0,120);
+ if(!title)title='Slack企画 '+(m.ts||'');
+ const parsed=parseIdeas(raw,{single:true});
+ const idea=parsed.length===1?parsed[0]:blank();
+ idea.title=title;
+ if(!parsed.length)idea.content=raw;
+ if(!idea.url){const url=raw.match(/https?:\/\/[^\s<>＜＞|]+/);if(url)idea.url=url[0]}
  return idea;
 }
 function groupSlackProposalMessages(messages){
