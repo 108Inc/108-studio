@@ -449,12 +449,17 @@ let slackChannels=[];let slackMessages=[];
 function slackIdeaFromMessage(m){
  const raw=normalizeSlackText(m.text||'').trim();
  if(!raw)return null;
+ const linesForTitle=raw.split(/\r?\n/).map(x=>normalize(x.trim())).filter(Boolean);
+ const fieldHeader=/^[<＜〈【\[]\s*(?:参考ミーム|参考動画|参考URL|参考リンク|出演メンバー|出演者|音源|使用箇所|場所|衣装|企画概要|企画内容|撮影|狙い|人選理由|相談|評価|FB)\s*[>＞〉】\]]/;
+ const namedTitle=linesForTitle.map(x=>titleLine(x)).find(Boolean);
+ const plainTitle=linesForTitle.find(x=>!fieldHeader.test(x)&&!/^https?:\/\/|^[-・●]\s|^[①-⑳]\s|^\d+[.)．]|^```/.test(x));
+ const preferredTitle=(namedTitle||plainTitle||'').replace(/^[<＜〈【\[]\s*(?:企画名|タイトル)\s*[>＞〉】\]]\s*[:：]?\s*/,'').trim();
  const parsed=parseIdeas(raw,{single:true});
- if(parsed.length===1){const idea=parsed[0];if(/^https?:\/\//.test(idea.title)){const lines=raw.split(/\r?\n/).map(x=>normalize(x.trim())).filter(Boolean);const named=lines.find(x=>titleLine(x))||lines.find(x=>!/^https?:\/\/|^<|^＜|^【(?:参考|撮影|出演|音源|狙い)/.test(x));idea.title=named?(titleLine(named)||cleanTitle(named)).slice(0,120):'参考動画の企画';}return idea;}
+ if(parsed.length===1){const idea=parsed[0];if(preferredTitle&&(/^(?:参考ミーム|参考動画|参考URL|出演メンバー)/.test(idea.title)||/^https?:/.test(idea.title)))idea.title=cleanTitle(preferredTitle).slice(0,120);if(/^https?:\/\//.test(idea.title)){const lines=raw.split(/\r?\n/).map(x=>normalize(x.trim())).filter(Boolean);const named=lines.find(x=>titleLine(x))||lines.find(x=>!/^https?:\/\/|^<|^＜|^【(?:参考|撮影|出演|音源|狙い)/.test(x));idea.title=named?(titleLine(named)||cleanTitle(named)).slice(0,120):'参考動画の企画';}return idea;}
  // A Slack reply can contain a heading-only first line, rich formatting, or
  // a different field order. Keep it importable instead of hiding it.
  const lines=raw.split(/\r?\n/).map(x=>normalize(x.trim())).filter(Boolean);
- const candidate=lines.find(x=>!/^(```|https?:\/\/|<[^>]+>|＜[^＞]+＞|【(?:参考|撮影|出演|音源|狙い|使用|場所))/.test(x))||lines[0];
+ const candidate=preferredTitle||lines.find(x=>!/^(```|https?:\/\/|<[^>]+>|＜[^＞]+＞|【(?:参考|撮影|出演|音源|狙い|使用|場所))/.test(x))||lines[0];
  const idea=blank();
  idea.title=cleanTitle(candidate).slice(0,120)||'Slack返信 '+(m.ts||'');
  idea.content=raw;
@@ -492,7 +497,7 @@ $('slack-preview').onclick=async()=>{
    const idea=slackIdeaFromMessage(m),imported=idea&&slackAlreadyImported(m,idea);
    if(!idea)invalid++;
    if(imported)already++;else if(idea)available++;
-   const row=document.createElement('label');row.style.cssText='display:block;box-sizing:border-box;min-width:0;max-width:100%;overflow:hidden;padding:12px;border:1px solid #dce3ef;border-radius:8px;margin:8px 0;cursor:pointer';
+   const row=document.createElement('label');row.style.cssText='display:block;box-sizing:border-box;flex:0 0 auto;height:auto;min-height:120px;max-height:none;min-width:0;max-width:100%;overflow:visible;padding:12px;border:1px solid #dce3ef;border-radius:8px;margin:8px 0;cursor:pointer';
    const cb=document.createElement('input');cb.type='checkbox';cb.checked=false;cb.dataset.slackIndex=i;
    const title=document.createElement('strong');title.textContent=' '+(idea?.title||'企画として認識できない返信（原文を確認）')+(imported?'（取り込み済み・再取り込み可能）':'');title.style.cssText='display:inline;overflow-wrap:anywhere;word-break:break-word';
 
