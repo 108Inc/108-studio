@@ -39,7 +39,7 @@ def workflow_init(conn):
     with _WORKFLOW_LOCK:
         if _WORKFLOW_READY:return
         shared_init(conn)
-        for col, typ in [('owner_email','TEXT'),('due_date','TEXT'),('workflow_status',"TEXT DEFAULT '作成中'"),('approved_revision','INTEGER'),('approved_by','TEXT'),('approved_at','TIMESTAMPTZ'),('submitted_at','TIMESTAMPTZ')]:
+        for col, typ in [('owner_email','TEXT'),('due_date','TEXT'),('workflow_status',"TEXT DEFAULT '作成中'"),('approved_revision','INTEGER'),('approved_by','TEXT'),('approved_at','TIMESTAMPTZ'),('submitted_at','TIMESTAMPTZ'),('review_notes','JSONB')]:
             conn.execute('ALTER TABLE studio_shared_docs ADD COLUMN IF NOT EXISTS '+col+' '+typ)
         conn.commit()
         _WORKFLOW_READY=True
@@ -63,7 +63,16 @@ def workflow_action(doc_id, action, user, body):
             conn.execute("UPDATE studio_shared_docs SET workflow_status='承認済み',approved_revision=revision,approved_by=%s,approved_at=NOW() WHERE id=%s",(user,doc_id))
         elif action=='reject':
             if user!=APPROVER_EMAIL:return {'error':'中島のGoogleアカウントのみ差し戻せます'},403
-            conn.execute("UPDATE studio_shared_docs SET workflow_status='差し戻し',approved_revision=NULL WHERE id=%s",(doc_id,))
+            notes=body.get('notes')
+            if not isinstance(notes,list) or not notes or len(notes)>40:return {'error':'差し戻し理由を入力してください'},422
+            clean=[]
+            for note in notes:
+                if not isinstance(note,dict):return {'error':'指摘内容が不正です'},422
+                message=str(note.get('text','')).strip()
+                page=note.get('page',0)
+                if not message or len(message)>1000 or type(page)!=int or not 0<=page<=500:return {'error':'指摘内容を確認してください'},422
+                clean.append({'page':page,'text':message,'by':user})
+            conn.execute("UPDATE studio_shared_docs SET workflow_status='差し戻し',approved_revision=NULL,review_notes=%s WHERE id=%s",(__import__('psycopg').types.json.Jsonb(clean),doc_id))
         elif action=='submit':
             if status not in ('承認済み','提出済み') or approved!=revision:return {'error':'最新版の承認が必要です'},409
             conn.execute("UPDATE studio_shared_docs SET workflow_status='提出済み',submitted_at=NOW() WHERE id=%s",(doc_id,))
@@ -86,15 +95,15 @@ def shared_list():
     with shared_db() as conn:
         shared_init(conn)
         workflow_init(conn)
-        rows=conn.execute("SELECT id,name,data->>'client',workflow_status,revision,updated_by,updated_at,owner_email,due_date,approved_revision FROM studio_shared_docs ORDER BY updated_at DESC LIMIT 500").fetchall()
-        return [{'id':r[0],'name':r[1],'client':r[2] or 'クライアント未設定','status':r[3] or '作成中','revision':r[4],'updatedBy':r[5],'updatedAt':r[6].isoformat(),'owner':r[7] or '', 'dueDate':r[8] or '', 'approvedRevision':r[9]} for r in rows]
+        rows=conn.execute("SELECT id,name,data->>'client',workflow_status,revision,updated_by,updated_at,owner_email,due_date,approved_revision,review_notes FROM studio_shared_docs ORDER BY updated_at DESC LIMIT 500").fetchall()
+        return [{'id':r[0],'name':r[1],'client':r[2] or 'クライアント未設定','status':r[3] or '作成中','revision':r[4],'updatedBy':r[5],'updatedAt':r[6].isoformat(),'owner':r[7] or '', 'dueDate':r[8] or '', 'approvedRevision':r[9],'reviewNotes':r[10] or []} for r in rows]
 
 def shared_get(doc_id):
     with shared_db() as conn:
         shared_init(conn)
         workflow_init(conn)
-        row=conn.execute("SELECT name,data,revision,updated_by,updated_at,workflow_status,owner_email,due_date,approved_revision FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
-        return {'id':doc_id,'name':row[0],'data':row[1],'revision':row[2],'updatedBy':row[3],'updatedAt':row[4].isoformat(),'status':row[5],'owner':row[6] or '', 'dueDate':row[7] or '', 'approvedRevision':row[8]} if row else None
+        row=conn.execute("SELECT name,data,revision,updated_by,updated_at,workflow_status,owner_email,due_date,approved_revision,review_notes FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
+        return {'id':doc_id,'name':row[0],'data':row[1],'revision':row[2],'updatedBy':row[3],'updatedAt':row[4].isoformat(),'status':row[5],'owner':row[6] or '', 'dueDate':row[7] or '', 'approvedRevision':row[8],'reviewNotes':row[9] or []} if row else None
 
 def next_friday_iso():
     from datetime import date,timedelta
