@@ -29,6 +29,39 @@ def shared_init(conn):
         updated_by TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY(doc_id,revision))""")
 
+APPROVER_EMAIL = 'r.nakajima@108-inc.net'
+
+def workflow_init(conn):
+    shared_init(conn)
+    for col, typ in [('owner_email','TEXT'),('due_date','TEXT'),('workflow_status',"TEXT DEFAULT '作成中'"),('approved_revision','INTEGER'),('approved_by','TEXT'),('approved_at','TIMESTAMPTZ'),('submitted_at','TIMESTAMPTZ')]:
+        conn.execute('ALTER TABLE studio_shared_docs ADD COLUMN IF NOT EXISTS '+col+' '+typ)
+
+def workflow_action(doc_id, action, user, body):
+    with shared_db() as conn:
+        workflow_init(conn)
+        row=conn.execute("SELECT revision,workflow_status,approved_revision FROM studio_shared_docs WHERE id=%s FOR UPDATE",(doc_id,)).fetchone()
+        if not row:return {'error':'資料が見つかりません'},404
+        revision,status,approved=row
+        if action=='metadata':
+            due=body.get('dueDate','')
+            owner=body.get('owner','')
+            if not isinstance(due,str) or (due and not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}',due)) or not isinstance(owner,str) or len(owner)>120:return {'error':'入力値が不正です'},422
+            conn.execute("UPDATE studio_shared_docs SET due_date=%s,owner_email=%s WHERE id=%s",(due,owner,doc_id))
+        elif action=='request':
+            conn.execute("UPDATE studio_shared_docs SET workflow_status='承認待ち',approved_revision=NULL WHERE id=%s",(doc_id,))
+        elif action=='approve':
+            if user!=APPROVER_EMAIL:return {'error':'中島のGoogleアカウントのみ承認できます'},403
+            if status!='承認待ち':return {'error':'承認待ちではありません'},409
+            conn.execute("UPDATE studio_shared_docs SET workflow_status='承認済み',approved_revision=revision,approved_by=%s,approved_at=NOW() WHERE id=%s",(user,doc_id))
+        elif action=='reject':
+            if user!=APPROVER_EMAIL:return {'error':'中島のGoogleアカウントのみ差し戻せます'},403
+            conn.execute("UPDATE studio_shared_docs SET workflow_status='差し戻し',approved_revision=NULL WHERE id=%s",(doc_id,))
+        elif action=='submit':
+            if status not in ('承認済み','提出済み') or approved!=revision:return {'error':'最新版の承認が必要です'},409
+            conn.execute("UPDATE studio_shared_docs SET workflow_status='提出済み',submitted_at=NOW() WHERE id=%s",(doc_id,))
+        else:return {'error':'操作が不正です'},422
+    return {'ok':True},200
+
 def shared_versions(doc_id):
     with shared_db() as conn:
         shared_init(conn)
@@ -44,14 +77,16 @@ def shared_version_get(doc_id,revision):
 def shared_list():
     with shared_db() as conn:
         shared_init(conn)
-        rows=conn.execute("SELECT id,name,data->>'client',data->>'workflowStatus',revision,updated_by,updated_at FROM studio_shared_docs ORDER BY updated_at DESC LIMIT 500").fetchall()
-        return [{'id':r[0],'name':r[1],'client':r[2] or 'クライアント未設定','status':r[3] or '作成中','revision':r[4],'updatedBy':r[5],'updatedAt':r[6].isoformat()} for r in rows]
+        workflow_init(conn)
+        rows=conn.execute("SELECT id,name,data->>'client',workflow_status,revision,updated_by,updated_at,owner_email,due_date,approved_revision FROM studio_shared_docs ORDER BY updated_at DESC LIMIT 500").fetchall()
+        return [{'id':r[0],'name':r[1],'client':r[2] or 'クライアント未設定','status':r[3] or '作成中','revision':r[4],'updatedBy':r[5],'updatedAt':r[6].isoformat(),'owner':r[7] or '', 'dueDate':r[8] or '', 'approvedRevision':r[9]} for r in rows]
 
 def shared_get(doc_id):
     with shared_db() as conn:
         shared_init(conn)
-        row=conn.execute("SELECT name,data,revision,updated_by,updated_at FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
-        return {'id':doc_id,'name':row[0],'data':row[1],'revision':row[2],'updatedBy':row[3],'updatedAt':row[4].isoformat()} if row else None
+        workflow_init(conn)
+        row=conn.execute("SELECT name,data,revision,updated_by,updated_at,workflow_status,owner_email,due_date,approved_revision FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
+        return {'id':doc_id,'name':row[0],'data':row[1],'revision':row[2],'updatedBy':row[3],'updatedAt':row[4].isoformat(),'status':row[5],'owner':row[6] or '', 'dueDate':row[7] or '', 'approvedRevision':row[8]} if row else None
 
 def shared_create(name,data,user):
     import uuid
@@ -65,7 +100,8 @@ def shared_create(name,data,user):
 def shared_update(doc_id,revision,data,user):
     with shared_db() as conn:
         shared_init(conn)
-        row=conn.execute("""UPDATE studio_shared_docs SET data=%s,revision=revision+1,
+        workflow_init(conn)
+        row=conn.execute("""UPDATE studio_shared_docs SET data=%s,revision=revision+1,workflow_status='作成中',approved_revision=NULL,
             updated_by=%s,updated_at=NOW() WHERE id=%s AND revision=%s
             RETURNING revision""",(__import__('psycopg').types.json.Jsonb(data),user,doc_id,revision)).fetchone()
         if row:
