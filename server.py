@@ -337,6 +337,22 @@ class Handler(SimpleHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == '/api/logout':
             self.send_response(200); self.send_header('Set-Cookie', 'studio_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'); self.end_headers(); return
+        match=re.fullmatch(r'/api/shared-docs/([a-f0-9]{32})/workflow',path)
+        if match:
+            user=current_user(self.headers.get('Cookie',''))
+            if not user:return self.send_json({'error':'ログインが必要です'},401)
+            origin=self.headers.get('Origin','')
+            host=self.headers.get('Host','')
+            if origin and origin not in ('https://'+host,'http://'+host,'http://localhost:'+str(PORT)):return self.send_json({'error':'origin mismatch'},403)
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if not 0<length<=4096:return self.send_json({'error':'リクエストが不正です'},422)
+                body=json.loads(self.rfile.read(length))
+                result,code=workflow_action(match.group(1),body.get('action'),user,body)
+                return self.send_json(result,code)
+            except Exception as e:
+                print('workflow error',repr(e),flush=True)
+                return self.send_json({'error':'承認処理に失敗しました'},503)
         if path == '/api/shared-docs' or path.startswith('/api/shared-docs/'):
             user=current_user(self.headers.get('Cookie',''))
             if not user:return self.send_json({'error':'ログインが必要です'},401)
@@ -376,6 +392,15 @@ class Handler(SimpleHTTPRequestHandler):
                 length=int(self.headers.get('Content-Length','0'))
                 if not 0<length<=14_000_000:raise ValueError('PDF資料が大きすぎます')
                 payload=json.loads(self.rfile.read(length))
+                doc_id=payload.get('docId','')
+                revision=payload.get('revision')
+                if not isinstance(doc_id,str) or not re.fullmatch(r'[a-f0-9]{32}',doc_id) or type(revision)!=int:
+                    return self.send_json({'error':'承認済みの共有資料からPDFを出力してください'},403)
+                with shared_db() as conn:
+                    workflow_init(conn)
+                    row=conn.execute("SELECT revision,approved_revision,workflow_status FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
+                if not row or row[0]!=revision or row[1]!=revision or row[2] not in ('承認済み','提出済み'):
+                    return self.send_json({'error':'中島が承認した最新版のみPDF出力できます'},403)
                 pdf=render_native_pdf(payload.get('html',''))
                 self.send_bytes(pdf,200,'application/pdf')
             except ValueError as e:return self.send_json({'error':str(e)},422)
