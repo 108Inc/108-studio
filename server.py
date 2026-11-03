@@ -9,6 +9,51 @@ CLIENT_ID = os.getenv('STUDIO_GOOGLE_CLIENT_ID', '').strip()
 SECRET = os.getenv('STUDIO_SESSION_SECRET', '')
 ALLOWED = {e.strip().lower() for e in os.getenv('STUDIO_ALLOWED_EMAILS', '').split(',') if e.strip()}
 
+# Shared documents require a persistent PostgreSQL database (Render DATABASE_URL).
+import threading
+_DB_LOCK = threading.Lock()
+def shared_db():
+    url=os.getenv('DATABASE_URL','').strip()
+    if not url: raise RuntimeError('共同編集にはRenderのDATABASE_URL（PostgreSQL）が必要です')
+    import psycopg
+    return psycopg.connect(url,connect_timeout=8)
+
+def shared_init(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS studio_shared_docs (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, data JSONB NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1, updated_by TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+
+def shared_list():
+    with shared_db() as conn:
+        shared_init(conn)
+        rows=conn.execute("SELECT id,name,revision,updated_by,updated_at FROM studio_shared_docs ORDER BY updated_at DESC LIMIT 100").fetchall()
+        return [{'id':r[0],'name':r[1],'revision':r[2],'updatedBy':r[3],'updatedAt':r[4].isoformat()} for r in rows]
+
+def shared_get(doc_id):
+    with shared_db() as conn:
+        shared_init(conn)
+        row=conn.execute("SELECT name,data,revision,updated_by,updated_at FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
+        return {'id':doc_id,'name':row[0],'data':row[1],'revision':row[2],'updatedBy':row[3],'updatedAt':row[4].isoformat()} if row else None
+
+def shared_create(name,data,user):
+    import uuid
+    doc_id=uuid.uuid4().hex
+    with shared_db() as conn:
+        shared_init(conn)
+        conn.execute("INSERT INTO studio_shared_docs(id,name,data,updated_by) VALUES (%s,%s,%s,%s)",(doc_id,name,__import__('psycopg').types.json.Jsonb(data),user))
+    return {'id':doc_id,'revision':1}
+
+def shared_update(doc_id,revision,data,user):
+    with shared_db() as conn:
+        shared_init(conn)
+        row=conn.execute("""UPDATE studio_shared_docs SET data=%s,revision=revision+1,
+            updated_by=%s,updated_at=NOW() WHERE id=%s AND revision=%s
+            RETURNING revision""",(__import__('psycopg').types.json.Jsonb(data),user,doc_id,revision)).fetchone()
+        if row:return {'revision':row[0]}
+        exists=conn.execute("SELECT 1 FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
+        return {'conflict':bool(exists),'missing':not bool(exists)}
+
 def configured():
     return bool(CLIENT_ID and len(SECRET) >= 32 and ALLOWED)
 
@@ -159,6 +204,16 @@ class Handler(SimpleHTTPRequestHandler):
             if path in ('/', '/index.html'):
                 return self.send_bytes(LOGIN.replace('__CLIENT_ID__', json.dumps(CLIENT_ID)).encode())
             return self.send_json({'error': 'ログインが必要です'}, 401)
+        if path == '/api/shared-docs' or path.startswith('/api/shared-docs/'):
+            try:
+                if path == '/api/shared-docs':return self.send_json({'documents':shared_list()})
+                doc_id=path.rsplit('/',1)[-1]
+                if not re.fullmatch(r'[a-f0-9]{32}',doc_id):return self.send_json({'error':'invalid document id'},400)
+                doc=shared_get(doc_id)
+                return self.send_json(doc if doc else {'error':'資料が見つかりません'},200 if doc else 404)
+            except Exception as e:
+                print('shared GET failed',repr(e),flush=True)
+                return self.send_json({'error':str(e) if isinstance(e,RuntimeError) else '共有資料の読み込みに失敗しました'},503)
         if path.startswith('/api/slack/'):
             try:
                 args = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -218,6 +273,34 @@ class Handler(SimpleHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == '/api/logout':
             self.send_response(200); self.send_header('Set-Cookie', 'studio_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'); self.end_headers(); return
+        if path == '/api/shared-docs' or path.startswith('/api/shared-docs/'):
+            user=current_user(self.headers.get('Cookie',''))
+            if not user:return self.send_json({'error':'ログインが必要です'},401)
+            origin=self.headers.get('Origin','')
+            host=self.headers.get('Host','')
+            if origin and origin not in ('https://'+host,'http://'+host,'http://localhost:'+str(PORT)):
+                return self.send_json({'error':'origin mismatch'},403)
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if not 0<length<=8_000_000:raise ValueError('資料データは8MB以内にしてください')
+                body=json.loads(self.rfile.read(length))
+                data=body.get('data')
+                if not isinstance(data,dict) or not isinstance(data.get('ideas'),list):
+                    raise ValueError('資料データが不正です')
+                if path == '/api/shared-docs':
+                    name=str(body.get('name','')).strip()[:120]
+                    if not name:raise ValueError('資料名を入力してください')
+                    return self.send_json(shared_create(name,data,user),201)
+                doc_id=path.rsplit('/',1)[-1]
+                if not re.fullmatch(r'[a-f0-9]{32}',doc_id):raise ValueError('資料IDが不正です')
+                revision=body.get('revision')
+                if type(revision)!=int or revision<1:raise ValueError('版番号が不正です')
+                result=shared_update(doc_id,revision,data,user)
+                return self.send_json(result,409 if result.get('conflict') else 404 if result.get('missing') else 200)
+            except ValueError as e:return self.send_json({'error':str(e)},422)
+            except Exception as e:
+                print('shared POST failed',repr(e),flush=True)
+                return self.send_json({'error':str(e) if isinstance(e,RuntimeError) else '共有資料の保存に失敗しました'},503)
         if path == '/api/export-pdf':
             if not current_user(self.headers.get('Cookie','')):
                 return self.send_json({'error':'ログインが必要です'},401)
