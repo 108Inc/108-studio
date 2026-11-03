@@ -788,7 +788,30 @@ area.querySelectorAll('[data-meta]').forEach(b=>b.onclick=async()=>{const id=b.d
 area.querySelectorAll('[data-action]').forEach(b=>b.onclick=async()=>{const action=b.dataset.action,id=b.dataset.id;if(action==='approve'||action==='reject'){const me=await fetch('/api/me',{credentials:'include'}).then(r=>r.json());if(me.email!=='r.nakajima@108-inc.net'){alert('中島のGoogleアカウントのみ承認・差し戻しできます');return}}if(!confirm(({request:'中島に承認申請しますか？',approve:'この版を承認しますか？',reject:'差し戻しますか？',submit:'提出完了として記録しますか？'})[action]))return;try{await api('/'+id+'/workflow',{action});await load()}catch(e){alert(e.message)}});
 
 }
-async function renderHistory(){if(!historyDoc)return;const d=docs.find(x=>x.id===historyDoc);area.innerHTML='<button type="button" class="secondary" id="studio-history-back">← 資料ライブラリへ戻る</button><h2 style="margin-top:18px">変更履歴｜'+escape(d?.name||'資料')+'</h2><p class="studio-inline-status">過去の保存版を確認し、復元できます。</p><div id="studio-history-results" class="studio-history"></div>';$('studio-history-back').onclick=()=>{historyDoc='';render()};const out=$('studio-history-results');out.textContent='履歴を読み込んでいます…';try{const list=(await api('/'+historyDoc+'/versions')).versions||[];out.innerHTML=list.length?list.map(v=>'<div class="studio-history-row"><div><strong>バージョン '+v.revision+'</strong><br><small>'+date(v.updatedAt)+' ／ '+escape(v.updatedBy)+'</small></div><button class="secondary" data-restore="'+v.revision+'">この版を復元</button></div>').join(''):'<div class="studio-empty">記録済みの履歴はありません。履歴機能の導入後の更新から記録されます。</div>';out.querySelectorAll('[data-restore]').forEach(b=>b.onclick=async()=>{if(!confirm('選択したバージョンを復元しますか？ 現在の内容も履歴に残ります。'))return;b.disabled=true;try{const id=historyDoc,rev=Number(b.dataset.restore);const version=await api('/'+id+'/versions/'+rev);const current=await api('/'+id);await api('/'+id,{revision:current.revision,data:version.data});alert('復元しました。資料を開くと反映されます。');await load()}catch(e){alert('復元に失敗しました：'+e.message);b.disabled=false}})}catch(e){out.textContent='履歴の読み込みに失敗しました：'+e.message}}
+async function renderHistory(){
+ if(!historyDoc)return;
+ const d=docs.find(x=>x.id===historyDoc);
+ area.innerHTML='<button type="button" class="secondary" id="studio-history-back">← 資料ライブラリへ戻る</button><h2>変更履歴｜'+escape(d?.name||'資料')+'</h2><div id="studio-history-results" class="studio-history">履歴を読み込んでいます…</div>';
+ $('studio-history-back').onclick=()=>{historyDoc='';render()};
+ const out=$('studio-history-results');
+ try{
+  const result=await api('/'+historyDoc+'/versions');
+  const versions=result.versions||[];
+  out.innerHTML=versions.length?versions.map(v=>'<div class="studio-history-row"><div><strong>バージョン '+v.revision+'</strong><br><small>'+date(v.updatedAt)+' ／ '+escape(v.updatedBy)+'</small></div><button data-restore="'+v.revision+'">この版を復元</button></div>').join(''):'<div class="studio-empty">記録済みの履歴はありません。</div>';
+  out.querySelectorAll('[data-restore]').forEach(btn=>{
+   btn.onclick=async()=>{
+    if(!confirm('このバージョンを復元しますか？'))return;
+    btn.disabled=true;
+    try{
+     const version=await api('/'+historyDoc+'/versions/'+btn.dataset.restore);
+     const current=await api('/'+historyDoc);
+     await api('/'+historyDoc,{revision:current.revision,data:version.data});
+     alert('復元しました');
+     await load();
+    }catch(error){alert('復元できません：'+error.message);btn.disabled=false}
+   };
+  });
+ }catch(error){out.textContent='履歴を取得できません：'+error.message}
 }
 document.querySelectorAll('[data-app-nav]').forEach(b=>b.addEventListener('click',()=>{if(['home','library'].includes(b.dataset.appNav)){view=b.dataset.appNav;load()}}));
 $('app-home-library').addEventListener('click',()=>{view='library';load()});
