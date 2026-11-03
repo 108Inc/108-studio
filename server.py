@@ -16,7 +16,7 @@ def shared_db():
     url=os.getenv('DATABASE_URL','').strip()
     if not url: raise RuntimeError('共同編集にはRenderのDATABASE_URL（PostgreSQL）が必要です')
     import psycopg
-    return psycopg.connect(url,connect_timeout=8)
+    return psycopg.connect(url,connect_timeout=8,options='-c statement_timeout=10000')
 
 def shared_init(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS studio_shared_docs (
@@ -31,10 +31,18 @@ def shared_init(conn):
 
 APPROVER_EMAIL = 'r.nakajima@108-inc.net'
 
+_WORKFLOW_READY = False
+_WORKFLOW_LOCK = threading.Lock()
 def workflow_init(conn):
-    shared_init(conn)
-    for col, typ in [('owner_email','TEXT'),('due_date','TEXT'),('workflow_status',"TEXT DEFAULT '作成中'"),('approved_revision','INTEGER'),('approved_by','TEXT'),('approved_at','TIMESTAMPTZ'),('submitted_at','TIMESTAMPTZ')]:
-        conn.execute('ALTER TABLE studio_shared_docs ADD COLUMN IF NOT EXISTS '+col+' '+typ)
+    global _WORKFLOW_READY
+    if _WORKFLOW_READY:return
+    with _WORKFLOW_LOCK:
+        if _WORKFLOW_READY:return
+        shared_init(conn)
+        for col, typ in [('owner_email','TEXT'),('due_date','TEXT'),('workflow_status',"TEXT DEFAULT '作成中'"),('approved_revision','INTEGER'),('approved_by','TEXT'),('approved_at','TIMESTAMPTZ'),('submitted_at','TIMESTAMPTZ')]:
+            conn.execute('ALTER TABLE studio_shared_docs ADD COLUMN IF NOT EXISTS '+col+' '+typ)
+        conn.commit()
+        _WORKFLOW_READY=True
 
 def workflow_action(doc_id, action, user, body):
     with shared_db() as conn:
