@@ -780,8 +780,30 @@ async function api(path,body){const controller=new AbortController();const timeo
 async function load(){area.innerHTML='<p class="studio-inline-status">共有資料を確認しています…</p>';try{docs=(await api('')).documents||[];render()}catch(e){area.innerHTML='<div class="studio-empty"><strong>資料を取得できませんでした</strong><p>'+escape(e.message)+'</p><button type="button" id="studio-retry">再試行する</button></div>';$('studio-retry').onclick=load}}
 function row(d,withStatus){return '<div class="studio-workrow"><div><strong>'+escape(d.name)+'</strong><small>'+escape(d.client||'未設定')+' ・ 最終更新 '+date(d.updatedAt)+' ・ '+escape(status(d))+'</small><div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px"><label>担当者 <input data-owner="'+d.id+'" value="'+escape(d.owner||'')+'" placeholder="担当者" style="width:120px"></label><label>提出予定日 <input type="date" data-due="'+d.id+'" value="'+escape(d.dueDate||'')+'"></label><button class="secondary" data-meta="'+d.id+'">保存</button></div></div><div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"><button data-open="'+d.id+'">編集</button>'+(withStatus?'<button data-action="request" data-id="'+d.id+'">承認申請</button><button data-action="approve" data-id="'+d.id+'">承認</button><button data-action="reject" data-id="'+d.id+'" class="secondary">差し戻し</button><button data-action="submit" data-id="'+d.id+'">提出完了</button>':'<button class="secondary" data-history="'+d.id+'">変更履歴</button>')+'</div></div>'}
 function render(){
-if(view==='home'){area.innerHTML='<div class="studio-kpis">'+['作成中','承認待ち','提出済み'].map(v=>'<div class="studio-kpi">'+v+'<b>'+docs.filter(d=>status(d)===v).length+'</b></div>').join('')+'</div><h2 style="margin-top:25px">資料の提出管理</h2><p class="studio-inline-status">資料ごとの提出状況を管理できます。ステータスはチームで共有されます。</p><div class="studio-worklist">'+(docs.length?docs.map(d=>row(d,true)).join(''):'<div class="studio-empty">共有資料がまだありません。エディターから「現在の資料を共有」で登録できます。</div>')+'</div>'}
-else{const clients=[...new Set(docs.map(d=>d.client||'クライアント未設定'))].sort((a,b)=>a.localeCompare(b,'ja'));const shown=docs.filter(d=>(!filterClient||(d.client||'クライアント未設定')===filterClient)&&(!filterText||(d.name+' '+d.client).toLocaleLowerCase().includes(filterText.toLocaleLowerCase())));area.innerHTML='<div class="studio-filter"><select id="studio-client"><option value="">すべてのクライアント</option>'+clients.map(c=>'<option '+(c===filterClient?'selected':'')+' value="'+escape(c)+'">'+escape(c)+'</option>').join('')+'</select><input id="studio-query" placeholder="資料名で検索" value="'+escape(filterText)+'"></div><p class="studio-inline-status">'+shown.length+'件の資料</p><div class="studio-worklist">'+(shown.length?shown.map(d=>row(d,false)).join(''):'<div class="studio-empty">該当する資料がありません。</div>')+'</div>';$('studio-client').onchange=e=>{filterClient=e.target.value;render()};$('studio-query').oninput=e=>{filterText=e.target.value;render()}}
+const now=new Date(),weekday=now.getDay(),days=(5-weekday+7)%7;
+const friday=new Date(now.getFullYear(),now.getMonth(),now.getDate()+days);
+const fridayText=friday.toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'short'});
+if(view==='home'){
+ const active=docs.filter(d=>status(d)!=='提出済み');
+ const waiting=active.filter(d=>status(d)==='承認待ち');
+ const late=active.filter(d=>d.dueDate&&d.dueDate<now.toLocaleDateString('sv-SE'));
+ const upcoming=active.filter(d=>!late.includes(d)).sort((a,b)=>(a.dueDate||'9999').localeCompare(b.dueDate||'9999'));
+ area.innerHTML='<div class="studio-week-head"><div><span class="studio-week-eyebrow">WEEKLY DELIVERY · 毎週金曜提出</span><h2>今週の提出日：'+fridayText+'</h2><p>承認待ちと未提出を優先して管理</p></div><strong>あと '+days+' 日</strong></div>'+
+ '<div class="studio-kpis">'+[['未提出',active.length],['承認待ち',waiting.length],['提出済み',docs.filter(d=>status(d)==='提出済み').length]].map(v=>'<div class="studio-kpi">'+v[0]+'<b>'+v[1]+'</b></div>').join('')+'</div>'+
+ (late.length?'<h2 class="studio-section-heading">期限超過 · '+late.length+'件</h2><div class="studio-worklist">'+late.map(d=>row(d,true)).join('')+'</div>':'')+
+ '<h2 class="studio-section-heading">対応が必要な資料</h2><div class="studio-worklist">'+(upcoming.length?upcoming.map(d=>row(d,true)).join(''):'<div class="studio-empty">現在、未提出の資料はありません。</div>')+'</div>'+
+ '<h2 class="studio-section-heading">最近の提出済み資料</h2><div class="studio-worklist">'+(docs.filter(d=>status(d)==='提出済み').slice(0,5).map(d=>row(d,false)).join('')||'<div class="studio-empty">まだ提出済み資料はありません。</div>')+'</div>';
+}else if(view==='library'){
+ const clients=[...new Set(docs.map(d=>d.client||'クライアント未設定'))].sort((a,b)=>a.localeCompare(b,'ja'));
+ const shown=docs.filter(d=>(!filterClient||(d.client||'クライアント未設定')===filterClient)&&(!filterText||(d.name+' '+d.client).toLocaleLowerCase().includes(filterText.toLocaleLowerCase())));
+ area.innerHTML='<div class="studio-filter"><select id="studio-client"><option value="">すべてのクライアント</option>'+clients.map(c=>'<option '+(c===filterClient?'selected':'')+' value="'+escape(c)+'">'+escape(c)+'</option>').join('')+'</select><input id="studio-query" placeholder="資料名で検索" value="'+escape(filterText)+'"></div><p class="studio-inline-status">'+shown.length+'件の資料</p><div class="studio-worklist">'+(shown.length?shown.map(d=>row(d,false)).join(''):'<div class="studio-empty">該当する資料がありません。</div>')+'</div>';
+ $('studio-client').onchange=e=>{filterClient=e.target.value;render()};
+ $('studio-query').oninput=e=>{filterText=e.target.value;render()};
+}else{
+ area.innerHTML='<div class="studio-settings-grid"><div class="studio-settings-item"><h2>クライアント管理</h2><p>ブランドカラー・クライアント名を設定</p><button type="button" id="studio-settings-clients">クライアント設定を開く</button></div><div class="studio-settings-item"><h2>外部連携</h2><p>Slack取り込みは資料エディターから利用できます。</p><button type="button" id="studio-settings-editor">エディターへ移動</button></div><div class="studio-settings-item"><h2>共有保存</h2><p>資料は社内の共有ライブラリで管理します。承認・提出状況はホームから確認できます。</p></div></div>';
+ $('studio-settings-clients').onclick=()=>$('header-client-settings').click();
+ $('studio-settings-editor').onclick=()=>$('app-home-editor').click();
+}
 area.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{const id=b.dataset.open;location.href=location.pathname+'?doc='+id});
 area.querySelectorAll('[data-history]').forEach(b=>b.onclick=()=>{historyDoc=b.dataset.history;renderHistory()});
 area.querySelectorAll('[data-meta]').forEach(b=>b.onclick=async()=>{const id=b.dataset.meta;try{await api('/'+id+'/workflow',{action:'metadata',owner:area.querySelector('[data-owner="'+id+'"]').value,dueDate:area.querySelector('[data-due="'+id+'"]').value});await load()}catch(e){alert(e.message)}});
@@ -813,7 +835,7 @@ async function renderHistory(){
   });
  }catch(error){out.textContent='履歴を取得できません：'+error.message}
 }
-document.querySelectorAll('[data-app-nav]').forEach(b=>b.addEventListener('click',()=>{if(['home','library'].includes(b.dataset.appNav)){view=b.dataset.appNav;load()}}));
+document.querySelectorAll('[data-app-nav]').forEach(b=>b.addEventListener('click',()=>{if(['home','library','settings'].includes(b.dataset.appNav)){view=b.dataset.appNav;load()}}));
 $('app-home-library').addEventListener('click',()=>{view='library';load()});
 const observer=new MutationObserver(()=>{if(!home.classList.contains('hidden')&&view==='home'&&area.childElementCount===0)load()});observer.observe(home,{attributes:true,attributeFilter:['class']});
 view='home';load();
@@ -842,4 +864,6 @@ body:not(.studio-editor-view) .studio-filter{background:#fff;border:1px solid #e
 body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px}
 @media(max-width:900px){body:not(.studio-editor-view) .app-home{margin:0!important;padding:30px 18px!important}body:not(.studio-editor-view) .app-home-actions{margin:18px 0!important;justify-content:flex-start!important}.studio-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
 </style>
-</body></html>
+<style>
+.studio-week-head{display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid #e3e9f1;border-radius:14px;padding:24px 28px;margin:6px 0 20px;gap:16px}.studio-week-head h2{font-size:22px;margin:5px 0!important;color:#172b49}.studio-week-head p{font-size:12px;color:#71829a;margin:0}.studio-week-head>strong{background:#eaf1fc;border-radius:9px;padding:12px 16px;color:#23487f;white-space:nowrap}.studio-week-eyebrow{font-size:10px;letter-spacing:.1em;color:#5576a4;font-weight:750}.studio-section-heading{font-size:17px!important;margin:28px 0 12px!important;color:#223854}.studio-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.studio-settings-item{background:#fff;border:1px solid #e3e9f1;border-radius:12px;padding:24px}.studio-settings-item h2{font-size:17px;margin:0 0 8px}.studio-settings-item p{font-size:12px;color:#72829a;margin-bottom:18px}@media(max-width:700px){.studio-week-head{padding:18px;align-items:flex-start;flex-direction:column}.studio-settings-grid{grid-template-columns:1fr}}
+</style></body></html>
