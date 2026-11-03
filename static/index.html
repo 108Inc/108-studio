@@ -796,4 +796,27 @@ const observer=new MutationObserver(()=>{if(!home.classList.contains('hidden')&&
 view='home';load();
 })();
 </script>
+<style>
+/* Final workspace visual pass: independent, full-height screens */
+body:not(.studio-editor-view) header,body:not(.studio-editor-view) .shell,body:not(.studio-editor-view) .shared-panel{display:none!important}
+body:not(.studio-editor-view){background:#f5f7fb!important}
+body:not(.studio-editor-view) .app-home{margin:0 0 0 260px!important;max-width:none!important;min-height:100vh!important;border:0!important;border-radius:0!important;background:transparent!important;padding:44px 54px!important;box-shadow:none!important}
+body:not(.studio-editor-view) .app-home>h1{font-size:28px!important;font-weight:800!important;margin:0 0 8px!important;letter-spacing:-.03em}
+body:not(.studio-editor-view) .app-home>p{color:#708096!important;font-size:13px!important;margin:0!important}
+body:not(.studio-editor-view) .app-home-actions{display:flex!important;justify-content:flex-end!important;margin:-52px 0 34px!important;gap:8px!important}
+body:not(.studio-editor-view) .app-home-actions button{border-radius:8px!important;padding:10px 16px!important;font-size:12px!important}
+body:not(.studio-editor-view) .studio-dashboard{margin-top:34px!important}
+body:not(.studio-editor-view) .studio-kpis{gap:14px!important}
+body:not(.studio-editor-view) .studio-kpi{background:#fff!important;border:1px solid #e4e9f1!important;border-radius:13px!important;padding:20px 23px!important;box-shadow:0 2px 8px #20385806!important;color:#667790!important;font-size:13px!important}
+body:not(.studio-editor-view) .studio-kpi b{font-size:36px!important;color:#203c69!important}
+body:not(.studio-editor-view) .studio-worklist{margin-top:14px!important;gap:9px!important}
+body:not(.studio-editor-view) .studio-workrow{background:#fff!important;border:1px solid #e5eaf1!important;border-radius:12px!important;padding:18px!important;box-shadow:0 2px 8px #20385806!important}
+body:not(.studio-editor-view) .studio-workrow strong{color:#1a2d48;font-size:14px}
+body:not(.studio-editor-view) .studio-workrow small{font-size:11px}
+body:not(.studio-editor-view) .studio-workrow button{font-size:11px!important;padding:8px 10px!important}
+body:not(.studio-editor-view) .studio-empty{padding:48px 24px!important;border:1px dashed #d7e0ec!important;border-radius:12px!important;background:#fff!important}
+body:not(.studio-editor-view) .studio-filter{background:#fff;border:1px solid #e4e9f1;border-radius:12px;padding:16px}
+body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px}
+@media(max-width:900px){body:not(.studio-editor-view) .app-home{margin:0!important;padding:30px 18px!important}body:not(.studio-editor-view) .app-home-actions{margin:18px 0!important;justify-content:flex-start!important}.studio-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+</style>
 </body></html>
