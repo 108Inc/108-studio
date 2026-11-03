@@ -794,7 +794,12 @@ const status=d=>['作成中','承認待ち','承認済み','差し戻し','提�
 const date=d=>d?new Date(d).toLocaleString('ja-JP',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
 async function api(path,body){const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),12000);try{const res=await fetch('/api/shared-docs'+path,{signal:controller.signal,credentials:'include',...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});if(!res.ok){let message='HTTP '+res.status;try{const error=await res.json();message=error.error||message}catch(e){}throw Error(message)}return await res.json()}catch(e){if(e.name==='AbortError')throw Error('サーバー応答が12秒以内にありませんでした');throw e}finally{clearTimeout(timeout)}}
 async function load(){area.innerHTML='<p class="studio-inline-status">共有資料を確認しています…</p>';try{docs=(await api('')).documents||[];render()}catch(e){area.innerHTML='<div class="studio-empty"><strong>資料を取得できませんでした</strong><p>'+escape(e.message)+'</p><button type="button" id="studio-retry">再試行する</button></div>';$('studio-retry').onclick=load}}
-function row(d,withStatus){return '<div class="studio-workrow"><div><strong>'+escape(d.name)+'</strong><small>'+escape(d.client||'未設定')+' ・ 最終更新 '+date(d.updatedAt)+' ・ '+escape(status(d))+'</small><div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px"><label>担当者 <input data-owner="'+d.id+'" value="'+escape(d.owner||'')+'" placeholder="担当者" style="width:120px"></label><label>提出予定日 <input type="date" data-due="'+d.id+'" value="'+escape(d.dueDate||'')+'"></label><button class="secondary" data-meta="'+d.id+'">保存</button></div></div><div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"><button data-open="'+d.id+'">編集</button>'+(withStatus?'<button data-action="request" data-id="'+d.id+'">承認申請</button><button data-action="approve" data-id="'+d.id+'">承認</button><button data-action="reject" data-id="'+d.id+'" class="secondary">差し戻し</button><button data-action="submit" data-id="'+d.id+'">提出完了</button>':'<button class="secondary" data-history="'+d.id+'">変更履歴</button>')+'</div></div>'}
+function row(d,withStatus){
+ const choices=['','りこ','たつまる','中田'];
+ const owner=choices.map(x=>'<option value="'+x+'" '+((d.owner||'')===x?'selected':'')+'>'+(x||'未設定')+'</option>').join('');
+ const due=d.dueDate?new Date(d.dueDate+'T12:00:00').toLocaleDateString('ja-JP',{month:'numeric',day:'numeric',weekday:'short'}):'次の金曜';
+ return '<div class="studio-workrow"><div><strong>'+escape(d.name)+'</strong><small>'+escape(d.client||'未設定')+' ・ 最終更新 '+date(d.updatedAt)+' ・ '+escape(status(d))+'</small><div class="studio-work-meta"><label>担当者 <select data-owner="'+d.id+'">'+owner+'</select></label><span>提出予定日 <strong>'+due+'</strong></span><span data-owner-message="'+d.id+'"></span></div></div><div class="studio-work-actions"><button data-open="'+d.id+'">編集</button>'+(withStatus?'<button data-action="request" data-id="'+d.id+'">承認申請</button><button data-action="approve" data-id="'+d.id+'">承認</button><button data-action="reject" data-id="'+d.id+'" class="secondary">差し戻し</button><button data-action="submit" data-id="'+d.id+'">提出完了</button>':'<button class="secondary" data-history="'+d.id+'">変更履歴</button>')+'</div></div>';
+}
 function render(){
 const now=new Date(),weekday=now.getDay(),days=(5-weekday+7)%7;
 const friday=new Date(now.getFullYear(),now.getMonth(),now.getDate()+days);
@@ -822,7 +827,17 @@ if(view==='home'){
 }
 area.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{const id=b.dataset.open;location.href=location.pathname+'?doc='+id});
 area.querySelectorAll('[data-history]').forEach(b=>b.onclick=()=>{historyDoc=b.dataset.history;renderHistory()});
-area.querySelectorAll('[data-meta]').forEach(b=>b.onclick=async()=>{const id=b.dataset.meta;try{await api('/'+id+'/workflow',{action:'metadata',owner:area.querySelector('[data-owner="'+id+'"]').value,dueDate:area.querySelector('[data-due="'+id+'"]').value});await load()}catch(e){alert(e.message)}});
+area.querySelectorAll('[data-owner]').forEach(select=>select.onchange=async()=>{
+ const id=select.dataset.owner,msg=area.querySelector('[data-owner-message="'+id+'"]');
+ select.disabled=true;msg.textContent='保存中…';
+ try{
+  const doc=docs.find(x=>x.id===id);
+  await api('/'+id+'/workflow',{action:'metadata',owner:select.value,dueDate:doc?.dueDate||''});
+  if(doc)doc.owner=select.value;
+  msg.textContent='保存済み';
+ }catch(e){msg.textContent='保存失敗';alert(e.message)}
+ finally{select.disabled=false}
+});
 area.querySelectorAll('[data-action]').forEach(b=>b.onclick=async()=>{const action=b.dataset.action,id=b.dataset.id;if(action==='approve'||action==='reject'){const me=await fetch('/api/me',{credentials:'include'}).then(r=>r.json());if(me.email!=='r.nakajima@108-inc.net'){alert('中島のGoogleアカウントのみ承認・差し戻しできます');return}}if(!confirm(({request:'中島に承認申請しますか？',approve:'この版を承認しますか？',reject:'差し戻しますか？',submit:'提出完了として記録しますか？'})[action]))return;try{await api('/'+id+'/workflow',{action});await load()}catch(e){alert(e.message)}});
 
 }
@@ -882,4 +897,4 @@ body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px
 </style>
 <style>
 .studio-week-head{display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid #e3e9f1;border-radius:14px;padding:24px 28px;margin:6px 0 20px;gap:16px}.studio-week-head h2{font-size:22px;margin:5px 0!important;color:#172b49}.studio-week-head p{font-size:12px;color:#71829a;margin:0}.studio-week-head>strong{background:#eaf1fc;border-radius:9px;padding:12px 16px;color:#23487f;white-space:nowrap}.studio-week-eyebrow{font-size:10px;letter-spacing:.1em;color:#5576a4;font-weight:750}.studio-section-heading{font-size:17px!important;margin:28px 0 12px!important;color:#223854}.studio-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.studio-settings-item{background:#fff;border:1px solid #e3e9f1;border-radius:12px;padding:24px}.studio-settings-item h2{font-size:17px;margin:0 0 8px}.studio-settings-item p{font-size:12px;color:#72829a;margin-bottom:18px}@media(max-width:700px){.studio-week-head{padding:18px;align-items:flex-start;flex-direction:column}.studio-settings-grid{grid-template-columns:1fr}}
-</style></body></html>
+</style><style>.studio-work-meta{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:12px;color:#61738e;font-size:12px}.studio-work-meta label{display:flex;align-items:center;gap:8px}.studio-work-meta select{border:1px solid #dce4ee;border-radius:7px;background:#f8fafd;padding:7px 11px;color:#233b60;font-size:12px}.studio-work-meta strong{color:#233b60}.studio-work-actions{display:flex;gap:7px;flex-wrap:wrap;align-items:center}</style></body></html>
