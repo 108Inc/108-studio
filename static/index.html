@@ -788,7 +788,7 @@ $('tab-import').onclick=showImport;$('back').onclick=showImport;$('tab-edit').on
 (function(){
 const $=id=>document.getElementById(id),home=$('app-home');
 const area=$('studio-dynamic');
-let docs=[],view='home',filterClient='',filterText='',historyDoc='';
+let docs=[],view='home',filterClient='',filterText='',historyDoc='',isApprover=false;
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const status=d=>['作成中','承認待ち','承認済み','差し戻し','提出済み'].includes(d.status)?d.status:'作成中';
 const date=d=>d?new Date(d).toLocaleString('ja-JP',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
@@ -797,8 +797,18 @@ async function load(){area.innerHTML='<p class="studio-inline-status">共有資�
 function row(d,withStatus){
  const choices=['','りこ','たつまる','中田'];
  const owner=choices.map(x=>'<option value="'+x+'" '+((d.owner||'')===x?'selected':'')+'>'+(x||'未設定')+'</option>').join('');
- const due=d.dueDate?new Date(d.dueDate+'T12:00:00').toLocaleDateString('ja-JP',{month:'numeric',day:'numeric',weekday:'short'}):'次の金曜';
- return '<div class="studio-workrow"><div><strong>'+escape(d.name)+'</strong><small>'+escape(d.client||'未設定')+' ・ 最終更新 '+date(d.updatedAt)+' ・ '+escape(status(d))+'</small><div class="studio-work-meta"><label>担当者 <select data-owner="'+d.id+'">'+owner+'</select></label><span>提出予定日 <strong>'+due+'</strong></span><span data-owner-message="'+d.id+'"></span></div></div><div class="studio-work-actions"><button data-open="'+d.id+'">編集</button>'+(withStatus?'<button data-action="request" data-id="'+d.id+'">承認申請</button><button data-action="approve" data-id="'+d.id+'">承認</button><button data-action="reject" data-id="'+d.id+'" class="secondary">差し戻し</button><button data-action="submit" data-id="'+d.id+'">提出完了</button>':'<button class="secondary" data-history="'+d.id+'">変更履歴</button>')+'</div></div>';
+ const friday=(()=>{const now=new Date(),days=(5-now.getDay()+7)%7;return new Date(now.getFullYear(),now.getMonth(),now.getDate()+days)})();
+ const due=d.dueDate?new Date(d.dueDate+'T12:00:00'):friday;
+ const dueLabel=due.toLocaleDateString('ja-JP',{year:'numeric',month:'numeric',day:'numeric',weekday:'short'});
+ const notes=(d.reviewNotes||[]).length;
+ const buttons=withStatus?(isApprover?
+  (status(d)==='承認待ち'?'<button data-action="approve" data-id="'+d.id+'">承認</button>':'')+
+  (status(d)!=='提出済み'?'<button data-redline="'+d.id+'" class="secondary">赤ペン・差し戻し</button>':'')+
+  (status(d)==='承認済み'?'<button data-action="submit" data-id="'+d.id+'">提出完了</button>':''):
+  (status(d)==='作成中'||status(d)==='差し戻し'?'<button data-action="request" data-id="'+d.id+'">承認申請</button>':'')+
+  (status(d)==='承認済み'?'<button data-action="submit" data-id="'+d.id+'">提出完了</button>':'')):
+  '<button class="secondary" data-history="'+d.id+'">変更履歴</button>';
+ return '<div class="studio-workrow"><div><strong>'+escape(d.name)+'</strong><small>'+escape(d.client||'未設定')+' ・ 最終更新 '+date(d.updatedAt)+' ・ '+escape(status(d))+'</small><div class="studio-work-meta"><label>担当者 <select data-owner="'+d.id+'">'+owner+'</select></label><span>提出予定日 <strong>'+dueLabel+'</strong></span><span data-owner-message="'+d.id+'"></span></div>'+(notes?'<div class="studio-redline-summary">🔴 赤ペン指摘 '+notes+'件 <button type="button" data-view-notes="'+d.id+'">内容を見る</button></div>':'')+'</div><div class="studio-work-actions"><button data-open="'+d.id+'">編集</button>'+buttons+'</div></div>';
 }
 function render(){
 const now=new Date(),weekday=now.getDay(),days=(5-weekday+7)%7;
@@ -839,6 +849,8 @@ if(view==='home'){
 }
 area.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{const id=b.dataset.open;location.href=location.pathname+'?doc='+id});
 area.querySelectorAll('[data-history]').forEach(b=>b.onclick=()=>{historyDoc=b.dataset.history;renderHistory()});
+area.querySelectorAll('[data-view-notes]').forEach(b=>b.onclick=()=>showRedline(b.dataset.viewNotes,false));
+area.querySelectorAll('[data-redline]').forEach(b=>b.onclick=()=>showRedline(b.dataset.redline,true));
 area.querySelectorAll('[data-owner]').forEach(select=>select.onchange=async()=>{
  const id=select.dataset.owner,msg=area.querySelector('[data-owner-message="'+id+'"]');
  select.disabled=true;msg.textContent='保存中…';
@@ -852,6 +864,32 @@ area.querySelectorAll('[data-owner]').forEach(select=>select.onchange=async()=>{
 });
 area.querySelectorAll('[data-action]').forEach(b=>b.onclick=async()=>{const action=b.dataset.action,id=b.dataset.id;if(action==='approve'||action==='reject'){const me=await fetch('/api/me',{credentials:'include'}).then(r=>r.json());if(me.email!=='r.nakajima@108-inc.net'){alert('中島のGoogleアカウントのみ承認・差し戻しできます');return}}if(!confirm(({request:'中島に承認申請しますか？',approve:'この版を承認しますか？',reject:'差し戻しますか？',submit:'提出完了として記録しますか？'})[action]))return;try{await api('/'+id+'/workflow',{action});await load()}catch(e){alert(e.message)}});
 
+}
+function showRedline(id,editable){
+ const d=docs.find(x=>x.id===id);if(!d)return;
+ const existing=d.reviewNotes||[];
+ const overlay=document.createElement('div');overlay.className='studio-redline-overlay';
+ overlay.innerHTML='<div class="studio-redline-dialog"><div class="studio-redline-title"><div><h2>🔴 赤ペンレビュー</h2><p>'+escape(d.name)+' ／ ページごとに指摘を残せます</p></div><button id="studio-redline-close" class="secondary">閉じる</button></div><div id="studio-redline-list"></div>'+(editable?'<button id="studio-redline-add" class="secondary">＋ 指摘を追加</button><div class="studio-redline-footer"><button id="studio-redline-submit">指摘を保存して差し戻す</button></div>':'')+'</div>';
+ document.body.appendChild(overlay);
+ overlay.querySelector('#studio-redline-close').onclick=()=>overlay.remove();
+ const list=overlay.querySelector('#studio-redline-list');
+ function add(note={page:1,text:''}){
+  const el=document.createElement('div');el.className='studio-redline-note';
+  el.innerHTML='<label>対象ページ <input type="number" min="0" max="500" value="'+Number(note.page||1)+'" '+(editable?'':'disabled')+'></label><textarea rows="3" placeholder="例：3ページ目の企画意図をもっと具体的に" '+(editable?'':'readonly')+'>'+escape(note.text)+'</textarea>'+(editable?'<button class="secondary" type="button">削除</button>':'');
+  list.appendChild(el);if(editable)el.querySelector('button').onclick=()=>el.remove();
+ }
+ existing.forEach(add);
+ if(!existing.length&&!editable)list.innerHTML='<p>赤ペン指摘はありません。</p>';
+ if(editable){
+  if(!existing.length)add();
+  overlay.querySelector('#studio-redline-add').onclick=()=>add();
+  overlay.querySelector('#studio-redline-submit').onclick=async()=>{
+   const notes=[...list.querySelectorAll('.studio-redline-note')].map(el=>({page:Number(el.querySelector('input').value),text:el.querySelector('textarea').value.trim()}));
+   if(!notes.length||notes.some(n=>!n.text||!Number.isInteger(n.page)||n.page<0)){alert('ページ番号と指摘内容を入力してください');return}
+   if(!confirm('赤ペン指摘を保存し、差し戻しますか？'))return;
+   try{await api('/'+id+'/workflow',{action:'reject',notes});overlay.remove();await load()}catch(e){alert(e.message)}
+  };
+ }
 }
 async function renderHistory(){
  if(!historyDoc)return;
@@ -881,7 +919,7 @@ async function renderHistory(){
 document.querySelectorAll('[data-app-nav]').forEach(b=>b.addEventListener('click',()=>{if(['home','library','settings'].includes(b.dataset.appNav)){view=b.dataset.appNav;load()}}));
 $('app-home-library').addEventListener('click',()=>{view='library';load()});
 const observer=new MutationObserver(()=>{if(!home.classList.contains('hidden')&&view==='home'&&area.childElementCount===0)load()});observer.observe(home,{attributes:true,attributeFilter:['class']});
-view='home';load();
+view='home';fetch('/api/me',{credentials:'include'}).then(r=>r.json()).then(me=>{isApprover=me.email==='r.nakajima@108-inc.net';render()}).catch(()=>{});load();
 })();
 </script>
 <style>
@@ -911,4 +949,4 @@ body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px
 .studio-week-head{display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid #e3e9f1;border-radius:14px;padding:24px 28px;margin:6px 0 20px;gap:16px}.studio-week-head h2{font-size:22px;margin:5px 0!important;color:#172b49}.studio-week-head p{font-size:12px;color:#71829a;margin:0}.studio-week-head>strong{background:#eaf1fc;border-radius:9px;padding:12px 16px;color:#23487f;white-space:nowrap}.studio-week-eyebrow{font-size:10px;letter-spacing:.1em;color:#5576a4;font-weight:750}.studio-section-heading{font-size:17px!important;margin:28px 0 12px!important;color:#223854}.studio-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.studio-settings-item{background:#fff;border:1px solid #e3e9f1;border-radius:12px;padding:24px}.studio-settings-item h2{font-size:17px;margin:0 0 8px}.studio-settings-item p{font-size:12px;color:#72829a;margin-bottom:18px}@media(max-width:700px){.studio-week-head{padding:18px;align-items:flex-start;flex-direction:column}.studio-settings-grid{grid-template-columns:1fr}}
 </style><style>.studio-work-meta{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:12px;color:#61738e;font-size:12px}.studio-work-meta label{display:flex;align-items:center;gap:8px}.studio-work-meta select{border:1px solid #dce4ee;border-radius:7px;background:#f8fafd;padding:7px 11px;color:#233b60;font-size:12px}.studio-work-meta strong{color:#233b60}.studio-work-actions{display:flex;gap:7px;flex-wrap:wrap;align-items:center}</style><style>
 .studio-folder-toolbar{display:flex;gap:12px;align-items:center;margin:20px 0}.studio-folder-search{display:flex;align-items:center;gap:12px;background:white;border:1px solid #dbe4f0;border-radius:12px;padding:13px 18px;flex:1;color:#6a819f}.studio-folder-search input{border:0;outline:0;width:100%;font-size:14px;color:#203655;background:transparent}.studio-folder-toolbar>button{border-radius:9px;background:#244579;color:white;border:0;padding:14px 18px;cursor:pointer}.studio-folder-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin-top:20px}.studio-folder{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:12px;background:#fff;border:1px solid #dce5f1;border-radius:14px;padding:23px 24px;cursor:pointer;min-height:153px;color:#1e3554;transition:box-shadow .15s,border-color .15s}.studio-folder:hover{border-color:#7295c6;box-shadow:0 5px 18px #24457915}.studio-folder-icon{font-size:30px;line-height:1;color:#5279ae}.studio-folder strong{font-size:17px}.studio-folder small{font-size:12px;color:#7588a0}.studio-folder-breadcrumb{display:flex;align-items:center;gap:10px;margin:14px 0;color:#8290a3}.studio-folder-breadcrumb button{border:0;background:none;color:#2e5a93;cursor:pointer;padding:8px 0}.studio-folder-breadcrumb strong{color:#1e3554}@media(max-width:1050px){.studio-folder-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:650px){.studio-folder-grid{grid-template-columns:1fr}.studio-folder-toolbar{flex-direction:column;align-items:stretch}}
-</style></body></html>
+</style><style>.studio-redline-summary{margin-top:10px;color:#ad2937;font-size:12px}.studio-redline-summary button{border:0;background:none;color:#ad2937;text-decoration:underline;cursor:pointer}.studio-redline-overlay{position:fixed;inset:0;background:#101d32aa;z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px}.studio-redline-dialog{background:#fff;width:min(760px,100%);max-height:85vh;overflow:auto;border-radius:16px;padding:26px;box-shadow:0 20px 60px #0003}.studio-redline-title{display:flex;justify-content:space-between;align-items:start;margin-bottom:18px}.studio-redline-title h2{margin:0 0 6px;color:#a72b39}.studio-redline-title p{font-size:12px;color:#66768c}.studio-redline-note{display:flex;gap:12px;align-items:start;background:#fff8f8;border-left:4px solid #d13d4c;border-radius:8px;padding:14px;margin-bottom:12px}.studio-redline-note label{font-size:12px;min-width:95px}.studio-redline-note input{display:block;width:76px;padding:8px;border:1px solid #e5b5bc;border-radius:6px;margin-top:6px}.studio-redline-note textarea{flex:1;min-width:0;border:1px solid #e5b5bc;border-radius:6px;padding:10px;font:inherit}.studio-redline-footer{text-align:right;margin-top:20px}</style></body></html>
