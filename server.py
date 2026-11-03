@@ -24,11 +24,28 @@ def shared_init(conn):
         revision INTEGER NOT NULL DEFAULT 1, updated_by TEXT NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
 
+    conn.execute("""CREATE TABLE IF NOT EXISTS studio_shared_versions (
+        doc_id TEXT NOT NULL, revision INTEGER NOT NULL, data JSONB NOT NULL,
+        updated_by TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY(doc_id,revision))""")
+
+def shared_versions(doc_id):
+    with shared_db() as conn:
+        shared_init(conn)
+        rows=conn.execute("SELECT revision,updated_by,created_at FROM studio_shared_versions WHERE doc_id=%s ORDER BY revision DESC LIMIT 100",(doc_id,)).fetchall()
+        return [{'revision':r[0],'updatedBy':r[1],'updatedAt':r[2].isoformat()} for r in rows]
+
+def shared_version_get(doc_id,revision):
+    with shared_db() as conn:
+        shared_init(conn)
+        row=conn.execute("SELECT data FROM studio_shared_versions WHERE doc_id=%s AND revision=%s",(doc_id,revision)).fetchone()
+        return {'data':row[0],'revision':revision} if row else None
+
 def shared_list():
     with shared_db() as conn:
         shared_init(conn)
-        rows=conn.execute("SELECT id,name,revision,updated_by,updated_at FROM studio_shared_docs ORDER BY updated_at DESC LIMIT 100").fetchall()
-        return [{'id':r[0],'name':r[1],'revision':r[2],'updatedBy':r[3],'updatedAt':r[4].isoformat()} for r in rows]
+        rows=conn.execute("SELECT id,name,data->>'client',data->>'workflowStatus',revision,updated_by,updated_at FROM studio_shared_docs ORDER BY updated_at DESC LIMIT 500").fetchall()
+        return [{'id':r[0],'name':r[1],'client':r[2] or 'クライアント未設定','status':r[3] or '作成中','revision':r[4],'updatedBy':r[5],'updatedAt':r[6].isoformat()} for r in rows]
 
 def shared_get(doc_id):
     with shared_db() as conn:
@@ -42,6 +59,7 @@ def shared_create(name,data,user):
     with shared_db() as conn:
         shared_init(conn)
         conn.execute("INSERT INTO studio_shared_docs(id,name,data,updated_by) VALUES (%s,%s,%s,%s)",(doc_id,name,__import__('psycopg').types.json.Jsonb(data),user))
+        conn.execute("INSERT INTO studio_shared_versions(doc_id,revision,data,updated_by) VALUES (%s,1,%s,%s)",(doc_id,__import__('psycopg').types.json.Jsonb(data),user))
     return {'id':doc_id,'revision':1}
 
 def shared_update(doc_id,revision,data,user):
@@ -50,7 +68,9 @@ def shared_update(doc_id,revision,data,user):
         row=conn.execute("""UPDATE studio_shared_docs SET data=%s,revision=revision+1,
             updated_by=%s,updated_at=NOW() WHERE id=%s AND revision=%s
             RETURNING revision""",(__import__('psycopg').types.json.Jsonb(data),user,doc_id,revision)).fetchone()
-        if row:return {'revision':row[0]}
+        if row:
+            conn.execute("INSERT INTO studio_shared_versions(doc_id,revision,data,updated_by) VALUES (%s,%s,%s,%s)",(doc_id,row[0],__import__('psycopg').types.json.Jsonb(data),user))
+            return {'revision':row[0]}
         exists=conn.execute("SELECT 1 FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
         return {'conflict':bool(exists),'missing':not bool(exists)}
 
@@ -207,6 +227,14 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/api/shared-docs' or path.startswith('/api/shared-docs/'):
             try:
                 if path == '/api/shared-docs':return self.send_json({'documents':shared_list()})
+                match=re.fullmatch(r'/api/shared-docs/([a-f0-9]{32})/versions(?:/([0-9]+))?',path)
+                if match:
+                    doc_id=match.group(1)
+                    if not shared_get(doc_id):return self.send_json({'error':'資料が見つかりません'},404)
+                    if match.group(2):
+                        version=shared_version_get(doc_id,int(match.group(2)))
+                        return self.send_json(version if version else {'error':'履歴が見つかりません'},200 if version else 404)
+                    return self.send_json({'versions':shared_versions(doc_id)})
                 doc_id=path.rsplit('/',1)[-1]
                 if not re.fullmatch(r'[a-f0-9]{32}',doc_id):return self.send_json({'error':'invalid document id'},400)
                 doc=shared_get(doc_id)
