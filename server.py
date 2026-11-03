@@ -96,12 +96,18 @@ def shared_get(doc_id):
         row=conn.execute("SELECT name,data,revision,updated_by,updated_at,workflow_status,owner_email,due_date,approved_revision FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
         return {'id':doc_id,'name':row[0],'data':row[1],'revision':row[2],'updatedBy':row[3],'updatedAt':row[4].isoformat(),'status':row[5],'owner':row[6] or '', 'dueDate':row[7] or '', 'approvedRevision':row[8]} if row else None
 
+def next_friday_iso():
+    from datetime import date,timedelta
+    today=date.today()
+    return (today+timedelta(days=(4-today.weekday())%7)).isoformat()
+
 def shared_create(name,data,user):
     import uuid
     doc_id=uuid.uuid4().hex
     with shared_db() as conn:
         shared_init(conn)
-        conn.execute("INSERT INTO studio_shared_docs(id,name,data,updated_by) VALUES (%s,%s,%s,%s)",(doc_id,name,__import__('psycopg').types.json.Jsonb(data),user))
+        workflow_init(conn)
+        conn.execute("INSERT INTO studio_shared_docs(id,name,data,updated_by,due_date,owner_email) VALUES (%s,%s,%s,%s,%s,%s)",(doc_id,name,__import__('psycopg').types.json.Jsonb(data),user,next_friday_iso(),user))
         conn.execute("INSERT INTO studio_shared_versions(doc_id,revision,data,updated_by) VALUES (%s,1,%s,%s)",(doc_id,__import__('psycopg').types.json.Jsonb(data),user))
     return {'id':doc_id,'revision':1}
 
