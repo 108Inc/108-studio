@@ -29,6 +29,33 @@ def shared_init(conn):
         updated_by TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY(doc_id,revision))""")
 
+DEFAULT_CLIENTS=['CUTIE STREET','22/7','Cloud ten','Ettone','僕が見たかった青空']
+def clients_init(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS studio_clients (
+        name TEXT PRIMARY KEY, color TEXT NOT NULL DEFAULT '#243f71',
+        channel TEXT NOT NULL DEFAULT '', updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+    for name in DEFAULT_CLIENTS:
+        conn.execute("INSERT INTO studio_clients(name) VALUES (%s) ON CONFLICT DO NOTHING",(name,))
+    conn.commit()
+
+def clients_list():
+    with shared_db() as conn:
+        clients_init(conn)
+        rows=conn.execute("SELECT name,color,channel FROM studio_clients ORDER BY name").fetchall()
+        return [{'name':r[0],'color':r[1],'channel':r[2]} for r in rows]
+
+def clients_save(body):
+    name=body.get('name','')
+    color=body.get('color','#243f71')
+    channel=body.get('channel','')
+    if not isinstance(name,str) or not 1<=len(name.strip())<=100 or not isinstance(color,str) or not re.fullmatch(r'#[0-9a-fA-F]{6}',color) or not isinstance(channel,str) or len(channel)>120:
+        raise ValueError('クライアント名・カラー・Slackチャンネルを確認してください')
+    with shared_db() as conn:
+        clients_init(conn)
+        conn.execute("""INSERT INTO studio_clients(name,color,channel) VALUES (%s,%s,%s)
+          ON CONFLICT(name) DO UPDATE SET color=EXCLUDED.color,channel=EXCLUDED.channel,updated_at=NOW()""",(name.strip(),color,channel.strip()))
+    return {'ok':True}
+
 APPROVER_EMAIL = 'r.nakajima@108-inc.net'
 
 _WORKFLOW_READY = False
@@ -283,6 +310,9 @@ class Handler(SimpleHTTPRequestHandler):
             if path in ('/', '/index.html'):
                 return self.send_bytes(LOGIN.replace('__CLIENT_ID__', json.dumps(CLIENT_ID)).encode())
             return self.send_json({'error': 'ログインが必要です'}, 401)
+        if path == '/api/clients':
+            try:return self.send_json({'clients':clients_list()})
+            except Exception as e:return self.send_json({'error':'クライアント一覧を取得できませんでした'},503)
         if path == '/api/shared-docs' or path.startswith('/api/shared-docs/'):
             try:
                 if path == '/api/shared-docs':return self.send_json({'documents':shared_list()})
@@ -358,6 +388,18 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        if path == '/api/clients':
+            user=current_user(self.headers.get('Cookie',''))
+            if not user:return self.send_json({'error':'ログインが必要です'},401)
+            origin=self.headers.get('Origin','')
+            host=self.headers.get('Host','')
+            if origin and origin not in ('https://'+host,'http://'+host,'http://localhost:'+str(PORT)):return self.send_json({'error':'origin mismatch'},403)
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if not 0<length<=4096:return self.send_json({'error':'入力が大きすぎます'},422)
+                return self.send_json(clients_save(json.loads(self.rfile.read(length))))
+            except ValueError as e:return self.send_json({'error':str(e)},422)
+            except Exception as e:return self.send_json({'error':'保存に失敗しました'},503)
         if path == '/api/logout':
             self.send_response(200); self.send_header('Set-Cookie', 'studio_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'); self.end_headers(); return
         match=re.fullmatch(r'/api/shared-docs/([a-f0-9]{32})/workflow',path)
