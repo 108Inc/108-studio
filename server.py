@@ -164,6 +164,14 @@ def shared_update(doc_id,revision,data,user):
         exists=conn.execute("SELECT 1 FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
         return {'conflict':bool(exists),'missing':not bool(exists)}
 
+def shared_delete(doc_id):
+    with shared_db() as conn:
+        shared_init(conn)
+        workflow_init(conn)
+        conn.execute("DELETE FROM studio_shared_versions WHERE doc_id=%s",(doc_id,))
+        deleted=conn.execute("DELETE FROM studio_shared_docs WHERE id=%s RETURNING id",(doc_id,)).fetchone()
+        return bool(deleted)
+
 def configured():
     return bool(CLIENT_ID and len(SECRET) >= 32 and ALLOWED)
 
@@ -390,6 +398,23 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception: return self.send_json({'error':'Slack取得中にエラーが発生しました'},502)
         if path == '/': self.path = '/index.html'
         return super().do_GET()
+    def do_DELETE(self):
+        path=urllib.parse.urlparse(self.path).path
+        match=re.fullmatch(r'/api/shared-docs/([a-f0-9]{32})',path)
+        if not match:return self.send_json({'error':'Not found'},404)
+        user=current_user(self.headers.get('Cookie',''))
+        if not user:return self.send_json({'error':'ログインが必要です'},401)
+        origin=self.headers.get('Origin','')
+        host=self.headers.get('Host','')
+        if origin and origin not in ('https://'+host,'http://'+host,'http://localhost:'+str(PORT)):
+            return self.send_json({'error':'origin mismatch'},403)
+        try:
+            if not shared_delete(match.group(1)):return self.send_json({'error':'資料が見つかりません'},404)
+            return self.send_json({'ok':True})
+        except Exception as e:
+            print('shared DELETE failed',repr(e),flush=True)
+            return self.send_json({'error':'資料削除に失敗しました'},503)
+
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
         if path == '/api/clients':
