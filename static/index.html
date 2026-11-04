@@ -675,6 +675,30 @@ $('dojo-load').onclick=async()=>{
   if(dojoIdeas.length)$('dojo-import').classList.remove('hidden');
  }catch(e){msg.textContent=e.message}
 };
+function dojoIdeaToStudio(item){
+ const idea=blank();
+ const raw=String(item.body||'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\\n/g,'\n');
+ const keys={'企画名':'title','企画タイトル':'title','タイトル':'title','参考動画URL':'url','参考動画':'url','参考URL':'url','参考リンク':'url','参考ミーム':'url','出演メンバー':'members','出演者':'members','メンバー':'members','音源':'sound','使用音源':'sound','使用箇所':'part','場所/衣装':'location','場所／衣装':'location','場所':'location','衣装':'location','企画内容':'content','企画概要':'content','内容':'content','撮影/演出イメージ':'shoot','撮影／演出イメージ':'shoot','撮影方法':'shoot','撮影イメージ':'shoot','撮影ポイント':'shoot','撮影':'shoot','狙い':'aim','企画意図':'aim','狙い／意図':'aim'};
+ let field='content',recognized=0;
+ for(const line of raw.split(/\r?\n/)){
+  const trimmed=line.trim();
+  const match=trimmed.match(/^[`\\s]*[<＜〈【]\s*([^>＞〉】]+)\s*[>＞〉】]\s*[:：]?\s*(.*)$/);
+  if(match){
+   const key=match[1].replace(/\s/g,'');
+   if(keys[key]){field=keys[key];recognized++;if(match[2])idea[field]+=(idea[field]?'\n':'')+match[2];continue}
+  }
+  if(!trimmed&&!idea[field])continue;
+  idea[field]+=(idea[field]?'\n':'')+line;
+ }
+ if(!recognized){idea.content=raw}
+ idea.title=(idea.title||item.title||'無題の企画').trim().replace(/^[`\s]+/,'');
+ if(idea.url){
+  const url=idea.url.match(/https?:\/\/[^\s<>＜＞]+/);
+  idea.url=url?url[0]:idea.url.trim();
+ }
+ if(!idea.url&&item.reference_url)idea.url=String(item.reference_url).replace(/&amp;/g,'&');
+ return idea;
+}
 $('dojo-import').onclick=()=>{
  const selected=[...$('dojo-results').querySelectorAll('input[data-dojo-index]:checked')].map(x=>dojoIdeas[Number(x.dataset.dojoIndex)]);
  if(!selected.length){$('dojo-msg').textContent='取り込む企画を選択してください';return}
@@ -682,7 +706,7 @@ $('dojo-import').onclick=()=>{
  let added=0,skipped=0;
  selected.forEach(item=>{
   if(existing.has(item.id)){skipped++;return}
-  const idea=blank();idea.title=item.title||'無題の企画';idea.url=item.reference_url||'';idea.content=item.body||'';
+  const idea=dojoIdeaToStudio(item);
   idea.dojoId=item.id;idea.dojoOwner=item.owner||'';idea.dojoDecision=item.decision||'';
   state.ideas.push(idea);existing.add(item.id);added++;
  });
