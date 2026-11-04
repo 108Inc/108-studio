@@ -290,12 +290,37 @@ def render_native_pdf(markup):
         raise ValueError('PDF資料が大きすぎます（14MB以内）')
     if re.search(r'<\s*(script|iframe|object|embed|form|base)\b',markup,re.I):
         raise ValueError('PDF用HTMLに使用できない要素が含まれています')
+    # Render's existing service build command may differ from render.yaml.
+    # Prefer the bundled Noto font, then install a cached runtime fallback.
     import subprocess
-    font_file=subprocess.run(['fc-match','-f','%{file}','Noto Sans CJK JP'],capture_output=True,text=True,timeout=5).stdout.strip()
-    if not font_file or not Path(font_file).is_file() or 'NotoSansCJK' not in Path(font_file).name:
-        raise RuntimeError('Japanese PDF font not available: '+font_file[:120])
+    import urllib.request
+    candidates = [
+        Path.home()/'.local/share/fonts/NotoSansCJKjp-Regular.otf',
+        Path('/usr/local/share/fonts/NotoSansCJKjp-Regular.otf'),
+        Path('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'),
+        Path('/tmp/studio-fonts/NotoSansCJKjp-Regular.otf'),
+    ]
+    try:
+        matched = subprocess.run(['fc-match','-f','%{file}','Noto Sans CJK JP'],capture_output=True,text=True,timeout=5).stdout.strip()
+        if matched and ('NotoSansCJK' in Path(matched).name or 'NotoSansCJK' in matched):
+            candidates.append(Path(matched))
+    except (OSError,subprocess.TimeoutExpired):
+        pass
+    font_path = next((p for p in candidates if p.is_file() and p.stat().st_size>1_000_000),None)
+    if font_path is None:
+        font_path = Path('/tmp/studio-fonts/NotoSansCJKjp-Regular.otf')
+        font_path.parent.mkdir(parents=True,exist_ok=True)
+        temp_path = font_path.with_suffix('.download')
+        try:
+            urllib.request.urlretrieve('https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf',temp_path)
+            if temp_path.stat().st_size<1_000_000:
+                raise RuntimeError('Downloaded Japanese font is unexpectedly small')
+            temp_path.replace(font_path)
+        except Exception as exc:
+            temp_path.unlink(missing_ok=True)
+            raise RuntimeError('Japanese PDF font installation failed; check Render build command and network access: '+str(exc)[:120]) from exc
     import base64
-    font_data=base64.b64encode(Path(font_file).read_bytes()).decode('ascii')
+    font_data=base64.b64encode(font_path.read_bytes()).decode('ascii')
     font_css='<style>@font-face{font-family:"StudioPDFJapanese";src:url(data:font/otf;base64,'+font_data+') format("opentype");font-weight:100 900;font-style:normal}html,body,.page,.page *{font-family:"StudioPDFJapanese",sans-serif!important}</style>'
     markup=font_css+markup
     with sync_playwright() as pw:
