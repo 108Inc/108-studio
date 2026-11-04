@@ -346,7 +346,7 @@ class Handler(SimpleHTTPRequestHandler):
                         q={'types':'public_channel,private_channel','limit':200,'exclude_archived':'true'}
                         if cursor: q['cursor']=cursor
                         result=slack_api('conversations.list',q)
-                        channels += [{'id':x['id'],'name':x.get('name','')} for x in result.get('channels',[])]
+                        channels += [{'id':x['id'],'name':x.get('name','')} for x in result.get('channels',[]) if x.get('is_member')]
                         cursor=result.get('response_metadata',{}).get('next_cursor','')
                         if not cursor: break
                     return self.send_json({'channels':channels})
