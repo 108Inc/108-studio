@@ -3,7 +3,7 @@ services:
     name: 108-studio
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt && PLAYWRIGHT_BROWSERS_PATH=0 python -m playwright install chromium
+    buildCommand: pip install -r requirements.txt && mkdir -p "$HOME/.local/share/fonts" && curl -fL --retry 3 --connect-timeout 20 -o "$HOME/.local/share/fonts/NotoSansCJKjp-Regular.otf" https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf && fc-cache -f "$HOME/.local/share/fonts" && PLAYWRIGHT_BROWSERS_PATH=0 python -m playwright install chromium
     startCommand: python server.py
     envVars:
       - key: PLAYWRIGHT_BROWSERS_PATH
