@@ -421,12 +421,19 @@ $('pages').addEventListener('drop',async e=>{
 });
 
 function repairImportedAim(d){
- if(!d||d.aim||!d.shoot)return;
- const m=d.shoot.match(/(?:^|\\n)\\s*[<＜〈【]\\s*狙い\\s*[／/・]\\s*(?:ポイント|意図)\\s*[>＞〉】]\\s*[:：]?\\s*/);
- if(!m)return;
- const start=m.index+(m[0].startsWith('\\n')?1:0);
- d.aim=d.shoot.slice(start+m[0].length-(m[0].startsWith('\\n')?1:0)).trim();
- d.shoot=d.shoot.slice(0,start).trim();
+ if(!d||typeof d!=='object')return;
+ const heading=/(?:^|\n)\s*(?:[<＜〈【]\s*)?狙い\s*[／/・]\s*(?:ポイント|意図)\s*(?:[>＞〉】])?\s*[:：]?\s*(?:\n|$)/;
+ for(const key of ['shoot','content']){
+  const value=String(d[key]||'').replace(/\\n/g,'\n');
+  const match=heading.exec(value);
+  if(!match)continue;
+  const before=value.slice(0,match.index).trim();
+  const after=value.slice(match.index+match[0].length).trim();
+  if(!after)continue;
+  d[key]=before;
+  d.aim=[d.aim,after].filter(Boolean).join('\n').trim();
+  break;
+ }
 }
 function renderList(){
  const root=$('list');root.replaceChildren();$('count').textContent=state.ideas.length+'件';
