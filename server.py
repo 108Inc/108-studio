@@ -502,9 +502,11 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json({'error':'承認済みの共有資料からPDFを出力してください'},403)
                 with shared_db() as conn:
                     workflow_init(conn)
-                    row=conn.execute("SELECT revision,approved_revision,workflow_status FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
-                if not row or row[0]!=revision or row[1]!=revision or row[2] not in ('承認済み','提出済み'):
-                    return self.send_json({'error':'中島が承認した最新版のみPDF出力できます'},403)
+                    row=conn.execute("SELECT revision,approved_revision,workflow_status,doc_type FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
+                if not row or row[0]!=revision:
+                    return self.send_json({'error':'資料の最新版を読み込んでからPDFを出力してください'},409)
+                if row[3]!='test' and (row[1]!=revision or row[2] not in ('承認済み','提出済み')):
+                    return self.send_json({'error':'本番資料は中島が承認した最新版のみPDF出力できます'},403)
                 pdf=render_native_pdf(payload.get('html',''))
                 self.send_bytes(pdf,200,'application/pdf')
             except ValueError as e:return self.send_json({'error':str(e)},422)
