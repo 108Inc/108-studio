@@ -378,6 +378,23 @@ class Handler(SimpleHTTPRequestHandler):
             if path in ('/', '/index.html'):
                 return self.send_bytes(LOGIN.replace('__CLIENT_ID__', json.dumps(CLIENT_ID)).encode())
             return self.send_json({'error': 'ログインが必要です'}, 401)
+        if path == '/api/dojo/ideas':
+            url=os.getenv('DOJO_API_URL','').rstrip('/')
+            key=os.getenv('DOJO_STUDIO_API_KEY','').strip()
+            if not url or not key:return self.send_json({'error':'道場連携の環境変数が未設定です'},503)
+            if not url.startswith('https://') and not url.startswith('http://localhost:'):
+                return self.send_json({'error':'道場のURLはHTTPSが必要です'},503)
+            client=(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('client') or [''])[0].strip()
+            if not client or len(client)>120:return self.send_json({'error':'クライアントを指定してください'},422)
+            try:
+                req=urllib.request.Request(url+'/api/studio/ideas?'+urllib.parse.urlencode({'client':client}),
+                    headers={'X-108-Integration-Key':key,'Accept':'application/json'})
+                with urllib.request.urlopen(req,timeout=15) as response:
+                    data=json.load(response)
+                return self.send_json({'ideas':data.get('ideas',[])})
+            except Exception as exc:
+                print('Dojo integration error:',type(exc).__name__,str(exc)[:200],flush=True)
+                return self.send_json({'error':'108道場から企画を取得できませんでした'},502)
         if path == '/api/clients':
             try:return self.send_json({'clients':clients_list()})
             except Exception as e:return self.send_json({'error':'クライアント一覧を取得できませんでした'},503)
