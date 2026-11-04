@@ -369,6 +369,16 @@ function fieldEditor(){
  const urlSection=document.createElement('section');urlSection.className='side-section';
  const urlHeading=document.createElement('h3');urlHeading.textContent='参考動画リンクを編集';urlSection.append(urlHeading);
  const urlHint=document.createElement('p');urlHint.className='hint';urlHint.textContent='Slackから取り込んだURLを変更できます。PDFの「クリックで参考へ」にも反映されます。';urlSection.append(urlHint);
+ const dojoOriginal=referenceUrlFromDojoRaw(d.dojoRaw||'')||decodeImport(d.dojoReferenceUrl||'').trim();
+ if(dojoOriginal){
+  const source=document.createElement('p');source.className='hint';source.style.cssText='overflow-wrap:anywhere;font-size:12px';
+  source.textContent='108道場の原文URL：'+dojoOriginal;urlSection.append(source);
+  if(d.url!==dojoOriginal){
+   const restore=document.createElement('button');restore.type='button';restore.className='secondary';restore.textContent='108道場の原文URLに戻す';
+   restore.onclick=()=>{d.url=dojoOriginal;save();renderPages();fieldEditor()};
+   urlSection.append(restore);
+  }
+ }
  const urlInput=document.createElement('input');urlInput.type='url';urlInput.placeholder='https://www.tiktok.com/...';urlInput.value=d.url||'';urlInput.style.cssText='width:100%;min-width:0;box-sizing:border-box;padding:10px;border:1px solid #cad3e2;border-radius:7px;font-size:13px';urlSection.append(urlInput);
  const urlActions=document.createElement('div');urlActions.style.cssText='display:flex;gap:8px;margin-top:8px;flex-wrap:wrap';
  const urlSave=document.createElement('button');urlSave.type='button';urlSave.textContent='リンクを保存';urlSave.onclick=()=>{const raw=urlInput.value.trim();if(raw&&!urlSafe(raw)){alert('https:// または http:// で始まるURLを入力してください');return}d.url=raw;save();renderPages();fieldEditor()};
@@ -443,7 +453,7 @@ function referenceUrlFromDojoRaw(raw){
  return '';
 }
 function repairImportedReference(d){
- if(!d||!d.dojoId)return;
+ if(!d||(!d.dojoRaw&&!d.dojoReferenceUrl))return;
  const original=referenceUrlFromDojoRaw(d.dojoRaw||'')||decodeImport(d.dojoReferenceUrl||'').trim();
  if(!original)return;
  const current=decodeImport(d.url||'').trim();
