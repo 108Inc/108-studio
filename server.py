@@ -290,6 +290,8 @@ def render_native_pdf(markup):
         raise ValueError('PDF資料が大きすぎます（14MB以内）')
     if re.search(r'<\s*(script|iframe|object|embed|form|base)\b',markup,re.I):
         raise ValueError('PDF用HTMLに使用できない要素が含まれています')
+    if not (Path.home()/'.local/share/fonts/NotoSansCJKjp-Regular.otf').is_file():
+        raise RuntimeError('Japanese PDF font missing: rebuild Render service')
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True,executable_path=(os.getenv('STUDIO_CHROMIUM_PATH') or ('/usr/bin/chromium' if Path('/usr/bin/chromium').exists() else None)),args=['--no-sandbox','--disable-dev-shm-usage'])
         try:
