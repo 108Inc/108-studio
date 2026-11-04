@@ -331,7 +331,10 @@ def render_native_pdf(markup):
     actual_font=subprocess.run(['fc-match','-f','%{file}','Noto Sans CJK JP'],capture_output=True,text=True,check=True,timeout=10).stdout.strip()
     if not actual_font or not Path(actual_font).is_file() or 'NotoSansCJK' not in Path(actual_font).name:
         raise RuntimeError('Japanese font is not registered with fontconfig: '+actual_font[:160])
-    font_css='<style>html,body,.page,.page *{font-family:"Noto Sans CJK JP",sans-serif!important}</style>'
+    # Match the editor's Noto Sans JP family. The installed CJK JP font is
+    # a reliable local fallback if the Google Fonts stylesheet is unavailable.
+    font_css=('<style>@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800;900&display=swap");'
+              'html,body,.page,.page *{font-family:"Noto Sans JP","Noto Sans CJK JP",sans-serif!important}</style>')
     markup=font_css+markup
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True,executable_path=(os.getenv('STUDIO_CHROMIUM_PATH') or ('/usr/bin/chromium' if Path('/usr/bin/chromium').exists() else None)),args=['--no-sandbox','--disable-dev-shm-usage'])
