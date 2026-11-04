@@ -319,9 +319,9 @@ def render_native_pdf(markup):
         except Exception as exc:
             temp_path.unlink(missing_ok=True)
             raise RuntimeError('Japanese PDF font installation failed; check Render build command and network access: '+str(exc)[:120]) from exc
-    import base64
-    font_data=base64.b64encode(font_path.read_bytes()).decode('ascii')
-    font_css='<style>@font-face{font-family:"StudioPDFJapanese";src:url(data:font/otf;base64,'+font_data+') format("opentype");font-weight:100 900;font-style:normal}html,body,.page,.page *{font-family:"StudioPDFJapanese",sans-serif!important}</style>'
+    # Avoid embedding a multi-megabyte CJK font as base64 in every PDF page.
+    # Chromium resolves the font directly from the OS fontconfig registry.
+    font_css='<style>html,body,.page,.page *{font-family:"Noto Sans CJK JP",sans-serif!important}</style>'
     markup=font_css+markup
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True,executable_path=(os.getenv('STUDIO_CHROMIUM_PATH') or ('/usr/bin/chromium' if Path('/usr/bin/chromium').exists() else None)),args=['--no-sandbox','--disable-dev-shm-usage'])
