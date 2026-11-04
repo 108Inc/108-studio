@@ -364,8 +364,8 @@ function fieldEditor(){
  const d=state.ideas[state.selected],root=$('fields');root.replaceChildren();
  if(!d){const p=document.createElement('p');p.className='hint';p.textContent='資料の企画ページを選択すると、Slack原文と画像位置を確認できます。';root.append(p);return}
  const heading=document.createElement('p');heading.className='hint';heading.textContent='選択中：'+(d.title||'無題の企画');root.append(heading);
- const details=document.createElement('details');details.className='side-section';const summary=document.createElement('summary');summary.textContent='Slack原文を確認';details.append(summary);
- const pre=document.createElement('pre');pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;font-size:12px';pre.textContent=d.originalSlackText||'この企画にはSlack原文が保存されていません。';details.append(pre);root.append(details);
+ const details=document.createElement('details');details.className='side-section';details.open=!!d.dojoRaw;const summary=document.createElement('summary');summary.textContent=d.dojoRaw?'108道場の原文を確認':'Slack原文を確認';details.append(summary);
+ const pre=document.createElement('pre');pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;font-size:12px';pre.textContent=d.dojoRaw||d.originalSlackText||'この企画には原文が保存されていません。';details.append(pre);root.append(details);
  const urlSection=document.createElement('section');urlSection.className='side-section';
  const urlHeading=document.createElement('h3');urlHeading.textContent='参考動画リンクを編集';urlSection.append(urlHeading);
  const urlHint=document.createElement('p');urlHint.className='hint';urlHint.textContent='Slackから取り込んだURLを変更できます。PDFの「クリックで参考へ」にも反映されます。';urlSection.append(urlHint);
