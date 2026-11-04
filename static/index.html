@@ -871,7 +871,21 @@ if(view==='home'){
 };
  $('studio-settings-editor').onclick=()=>$('app-home-editor').click();
 }
-area.querySelectorAll('[data-create-client]').forEach(b=>b.onclick=()=>{const client=b.dataset.createClient;document.querySelector('[data-app-nav="editor"]')?.click();const profile=document.getElementById('client-profile');if(profile){const match=Array.from(profile.options).find(o=>o.textContent.replace(/様$/,'').trim()===client);if(match){profile.value=match.value;profile.dispatchEvent(new Event('change',{bubbles:true}))}else{const input=document.getElementById('client');if(input){input.value=client;input.dispatchEvent(new Event('change',{bubbles:true}))}}}document.getElementById('document-new')?.click()});
+area.querySelectorAll('[data-create-client]').forEach(b=>b.onclick=async()=>{
+ const client=b.dataset.createClient;
+ b.disabled=true;
+ try{
+  const profile=profiles.find(p=>p.name.replace(/様$/,'').trim()===client);
+  const clientName=profile?.name||client;
+  const source={client:clientName,groupColor:profile?.color||'#fbf3d9',frontmatter:true,ideas:[],selected:0,pageOrder:[],selectedPage:0};
+  const d=await sharedAPI('',{name:clientName+' SNS撮影企画案',data:source});
+  await sharedList();
+  await sharedOpen(d.id,true);
+  document.querySelector('[data-app-nav="editor"]')?.click();
+  showImport();
+ }catch(e){alert('資料を作成できませんでした：'+e.message)}
+ finally{b.disabled=false}
+});
 area.querySelectorAll('[data-client-progress]').forEach(b=>b.onclick=()=>{filterClient=b.dataset.clientProgress;filterText='';view='library';document.querySelector('[data-app-nav="library"]')?.click();render()});
 area.querySelectorAll('[data-docmeta]').forEach(b=>b.onclick=()=>{const d=docs.find(x=>x.id===b.dataset.docmeta);if(!d)return;const dialog=document.createElement('dialog');dialog.className='studio-metadata-dialog';dialog.innerHTML='<form class="studio-metadata-form"><h2>資料情報を設定</h2><p>'+escape(d.name)+'</p><label>資料区分<select name="docType"><option value="production">本番資料</option><option value="test">テスト資料（進捗から除外）</option></select></label><label>対象週の開始日<input type="date" name="targetWeek"></label><label>提出予定日<input type="date" name="dueDate"></label><label>担当者<input name="owner" maxlength="120"></label><div><button type="button" data-cancel>キャンセル</button><button type="submit">保存</button></div></form>';document.body.append(dialog);const form=dialog.querySelector('form');form.elements.docType.value=d.docType||'test';form.elements.targetWeek.value=d.targetWeek||'';form.elements.dueDate.value=d.dueDate||'';form.elements.owner.value=d.owner||'';dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();form.onsubmit=async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(form));if(values.docType==='production'&&(!values.targetWeek||!values.dueDate)){alert('本番資料は対象週と提出予定日を登録してください');return}try{await api('/'+d.id+'/workflow',{action:'metadata',...values});dialog.close();await load()}catch(err){alert(err.message)}};dialog.onclose=()=>dialog.remove();dialog.showModal()});
 area.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{const id=b.dataset.open;location.href=location.pathname+'?doc='+id});
