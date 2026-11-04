@@ -709,8 +709,13 @@ async function downloadPdfDirect(){
 $('tab-import').onclick=showImport;$('back').onclick=showImport;$('tab-edit').onclick=showEdit;$('review').onclick=showEdit;$('print').onclick=downloadPdfDirect;refresh();
 </script>
 <script>
-/* Local multi-document library. Preserves the existing single-document key for backward compatibility. */
+/* Local multi-document library. Disabled for cloud documents to prevent overwriting shared state. */
 (function(){
+ if(new URLSearchParams(location.search).has('doc')){
+  const open=document.getElementById('document-library-open');
+  if(open)open.onclick=()=>{document.getElementById('shared-select')?.focus();document.getElementById('shared-select')?.scrollIntoView({block:'nearest'});};
+  return;
+ }
  const INDEX='108-studio-documents-v1', ACTIVE='108-studio-active-document-v1';
  const legacyKey='108-studio-v02';
  const el=id=>document.getElementById(id);
