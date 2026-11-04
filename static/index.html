@@ -663,7 +663,10 @@ $('dojo-load').onclick=async()=>{
   const response=await fetch('/api/dojo/ideas?'+new URLSearchParams({client}),{credentials:'include'});
   const payload=await response.json();
   if(!response.ok)throw Error(payload.error||'道場の取得に失敗しました');
-  dojoIdeas=Array.isArray(payload.ideas)?payload.ideas:[];
+  const allDojoIdeas=Array.isArray(payload.ideas)?payload.ideas:[];
+  const importedIds=new Set(state.ideas.map(x=>x.dojoId).filter(Boolean));
+  dojoIdeas=allDojoIdeas.filter(item=>!importedIds.has(item.id));
+  const excluded=allDojoIdeas.length-dojoIdeas.length;
   dojoIdeas.forEach((item,index)=>{
    const row=document.createElement('label');row.style.cssText='display:flex;gap:10px;align-items:flex-start;padding:12px;border-bottom:1px solid #e1e7f0;cursor:pointer';
    const cb=document.createElement('input');cb.type='checkbox';cb.dataset.dojoIndex=String(index);
@@ -671,7 +674,7 @@ $('dojo-load').onclick=async()=>{
    const sub=document.createElement('small');sub.style.cssText='display:block;color:#65748b;margin-top:4px';sub.textContent=[item.owner,item.decision,item.revision].filter(Boolean).join(' ／ ');
    info.append(title,sub);row.append(cb,info);list.append(row);
   });
-  msg.textContent=dojoIdeas.length+'件の提出候補が見つかりました。追加する企画を選択してください。';
+  msg.textContent=dojoIdeas.length+'件の未取り込み候補（この資料に取り込み済み '+excluded+'件を除外）。期間は全期間です。';
   if(dojoIdeas.length)$('dojo-import').classList.remove('hidden');
  }catch(e){msg.textContent=e.message}
 };
