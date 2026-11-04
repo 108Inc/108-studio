@@ -682,7 +682,7 @@ function dojoIdeaToStudio(item){
  let field='content',recognized=0;
  for(const line of raw.split(/\r?\n/)){
   const trimmed=line.trim();
-  const match=trimmed.match(/^[`\\s]*[<＜〈【]\s*([^>＞〉】]+)\s*[>＞〉】]\s*[:：]?\s*(.*)$/);
+  const match=trimmed.match(/^[`\s]*[<＜〈【]\s*([^>＞〉】]+)\s*[>＞〉】]\s*[:：]?\s*(.*)$/);
   if(match){
    const key=match[1].replace(/\s/g,'');
    if(keys[key]){field=keys[key];recognized++;if(match[2])idea[field]+=(idea[field]?'\n':'')+match[2];continue}
