@@ -290,8 +290,14 @@ def render_native_pdf(markup):
         raise ValueError('PDF資料が大きすぎます（14MB以内）')
     if re.search(r'<\s*(script|iframe|object|embed|form|base)\b',markup,re.I):
         raise ValueError('PDF用HTMLに使用できない要素が含まれています')
-    if not (Path.home()/'.local/share/fonts/NotoSansCJKjp-Regular.otf').is_file():
-        raise RuntimeError('Japanese PDF font missing: rebuild Render service')
+    import subprocess
+    font_file=subprocess.run(['fc-match','-f','%{file}','Noto Sans CJK JP'],capture_output=True,text=True,timeout=5).stdout.strip()
+    if not font_file or not Path(font_file).is_file() or 'NotoSansCJK' not in Path(font_file).name:
+        raise RuntimeError('Japanese PDF font not available: '+font_file[:120])
+    import base64
+    font_data=base64.b64encode(Path(font_file).read_bytes()).decode('ascii')
+    font_css='<style>@font-face{font-family:"StudioPDFJapanese";src:url(data:font/otf;base64,'+font_data+') format("opentype");font-weight:100 900;font-style:normal}html,body,.page,.page *{font-family:"StudioPDFJapanese",sans-serif!important}</style>'
+    markup=font_css+markup
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True,executable_path=(os.getenv('STUDIO_CHROMIUM_PATH') or ('/usr/bin/chromium' if Path('/usr/bin/chromium').exists() else None)),args=['--no-sandbox','--disable-dev-shm-usage'])
         try:
@@ -514,7 +520,7 @@ class Handler(SimpleHTTPRequestHandler):
             except ValueError as e:return self.send_json({'error':str(e)},422)
             except Exception as e:
                 print('PDF export failed:',repr(e),flush=True)
-                return self.send_json({'error':'PDFの生成に失敗しました。Renderのログをご確認ください'},500)
+                return self.send_json({'error':'PDF生成エラー: '+str(e)[:240]},500)
             return
         if path == '/api/tiktok-thumbnail':
             if not current_user(self.headers.get('Cookie', '')):
