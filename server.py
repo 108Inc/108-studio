@@ -34,6 +34,8 @@ def clients_init(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS studio_clients (
         name TEXT PRIMARY KEY, color TEXT NOT NULL DEFAULT '#243f71',
         channel TEXT NOT NULL DEFAULT '', updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+    conn.execute("ALTER TABLE studio_clients ADD COLUMN IF NOT EXISTS border_color TEXT NOT NULL DEFAULT '#000000'")
+    conn.execute("ALTER TABLE studio_clients ADD COLUMN IF NOT EXISTS text_mode TEXT NOT NULL DEFAULT 'auto'")
     for name in DEFAULT_CLIENTS:
         conn.execute("INSERT INTO studio_clients(name) VALUES (%s) ON CONFLICT DO NOTHING",(name,))
     conn.commit()
@@ -41,19 +43,27 @@ def clients_init(conn):
 def clients_list():
     with shared_db() as conn:
         clients_init(conn)
-        rows=conn.execute("SELECT name,color,channel FROM studio_clients ORDER BY name").fetchall()
-        return [{'name':r[0],'color':r[1],'channel':r[2]} for r in rows]
+        rows=conn.execute("SELECT name,color,channel,border_color,text_mode FROM studio_clients ORDER BY name").fetchall()
+        return [{'name':r[0],'color':r[1],'channel':r[2],'borderColor':r[3],'textMode':r[4]} for r in rows]
 
 def clients_save(body):
     name=body.get('name','')
     color=body.get('color','#243f71')
     channel=body.get('channel','')
-    if not isinstance(name,str) or not 1<=len(name.strip())<=100 or not isinstance(color,str) or not re.fullmatch(r'#[0-9a-fA-F]{6}',color) or not isinstance(channel,str) or len(channel)>120:
-        raise ValueError('クライアント名・カラー・Slackチャンネルを確認してください')
+    border_color=body.get('borderColor','#000000')
+    text_mode=body.get('textMode','auto')
+    if (not isinstance(name,str) or not 1<=len(name.strip())<=100
+        or not isinstance(color,str) or not re.fullmatch(r'#[0-9a-fA-F]{6}',color)
+        or not isinstance(border_color,str) or not re.fullmatch(r'#[0-9a-fA-F]{6}',border_color)
+        or text_mode not in ('auto','white','black')
+        or not isinstance(channel,str) or len(channel)>120):
+        raise ValueError('クライアント名・カラー・文字色・Slackチャンネルを確認してください')
     with shared_db() as conn:
         clients_init(conn)
-        conn.execute("""INSERT INTO studio_clients(name,color,channel) VALUES (%s,%s,%s)
-          ON CONFLICT(name) DO UPDATE SET color=EXCLUDED.color,channel=EXCLUDED.channel,updated_at=NOW()""",(name.strip(),color,channel.strip()))
+        conn.execute("""INSERT INTO studio_clients(name,color,channel,border_color,text_mode) VALUES (%s,%s,%s,%s,%s)
+          ON CONFLICT(name) DO UPDATE SET color=EXCLUDED.color,channel=EXCLUDED.channel,
+          border_color=EXCLUDED.border_color,text_mode=EXCLUDED.text_mode,updated_at=NOW()""",
+          (name.strip(),color,channel.strip(),border_color,text_mode))
     return {'ok':True}
 
 APPROVER_EMAIL = 'r.nakajima@108-inc.net'
