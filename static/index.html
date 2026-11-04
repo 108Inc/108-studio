@@ -259,7 +259,7 @@ async function autoCreateShared(){
 const sharedStatus=t=>{$('shared-status').textContent=t};
 async function sharedAPI(path,body){const res=await fetch('/api/shared-docs'+path,{credentials:'include',...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});const data=await res.json();if(!res.ok){const e=Error(data.error||'通信エラー');e.status=res.status;throw e}return data}
 let sharedDocuments=[];function renderSharedList(){const sel=$('shared-select'),q=$('shared-filter').value.trim().toLocaleLowerCase(),chosen=sel.value||sharedId;sel.replaceChildren(new Option('共有資料を選択',''));sharedDocuments.filter(d=>d.name.toLocaleLowerCase().includes(q)).forEach(d=>sel.add(new Option(d.name+' / '+new Date(d.updatedAt).toLocaleDateString('ja-JP')+' / '+d.updatedBy,d.id)));if([...sel.options].some(o=>o.value===chosen))sel.value=chosen;sharedStatus(q?'検索結果：'+(sel.options.length-1)+'件':'共有資料：'+sharedDocuments.length+'件')}async function sharedList(){try{const data=await sharedAPI('');sharedDocuments=data.documents;renderSharedList()}catch(e){sharedStatus('共有設定：'+e.message)}}$('shared-filter').addEventListener('input',renderSharedList);
-async function sharedOpen(id,force=false){if(!id)return;if(sharedDirty&&!force&&!confirm('未保存の変更を破棄して開きますか？'))return;const d=await sharedAPI('/'+id);sharedLoading=true;clearTimeout(sharedTimer);state=structuredClone(d.data);sharedId=id;sharedRev=d.revision;sharedDirty=false;sharedConflict=false;activeProfileId=profiles.find(p=>p.name===state.client)?.id||null;if(!Array.isArray(state.pageOrder)){state.pageOrder=initialPages();state.selectedPage=0}history.replaceState(null,'',location.pathname+'?doc='+id);refresh();sharedLoading=false;$('shared-select').value=id;sharedStatus('共有中：'+d.name+' / '+d.updatedBy+' 更新 '+d.revision)}
+async function sharedOpen(id,force=false){if(!id)return;if(sharedDirty&&!force&&!confirm('未保存の変更を破棄して開きますか？'))return;const d=await sharedAPI('/'+id);sharedLoading=true;clearTimeout(sharedTimer);state=structuredClone(d.data);sharedId=id;sharedRev=d.revision;sharedDirty=false;sharedConflict=false;activeProfileId=profiles.find(p=>p.name===state.client)?.id||null;if(!Array.isArray(state.pageOrder)){state.pageOrder=initialPages();state.selectedPage=0}history.replaceState(null,'',location.pathname+'?doc='+id);refresh();profileUI();sharedLoading=false;$('shared-select').value=id;sharedStatus('共有中：'+d.name+' / '+d.updatedBy+' 更新 '+d.revision)}
 async function sharedSave(){if(!sharedId||sharedBusy||sharedConflict||!sharedDirty)return;sharedBusy=true;sharedDirty=false;const snapshot=JSON.stringify(state);try{const d=await sharedAPI('/'+sharedId,{revision:sharedRev,data:JSON.parse(snapshot)});sharedRev=d.revision;sharedStatus('共有保存済み / 更新 '+sharedRev);if(JSON.stringify(state)!==snapshot)sharedDirty=true}catch(e){sharedDirty=true;if(e.status===409){sharedConflict=true;sharedStatus('競合：他のメンバーが更新しました。内容を控えてから「最新版を取得」してください。')}else sharedStatus('共有保存失敗：'+e.message)}finally{sharedBusy=false;if(sharedDirty&&!sharedConflict){clearTimeout(sharedTimer);sharedTimer=setTimeout(sharedSave,3000)}}}
 $('shared-create').onclick=async()=>{const name=prompt('共有資料名',state.client+' SNS撮影企画案');if(!name)return;try{const d=await sharedAPI('',{name,data:state});sharedId=d.id;sharedRev=d.revision;sharedDirty=false;sharedConflict=false;history.replaceState(null,'',location.pathname+'?doc='+sharedId);await sharedList();sharedStatus('共有開始：このページのURLを社内に送ってください')}catch(e){sharedStatus('作成失敗：'+e.message)}};
 $('shared-open').onclick=async()=>{try{await sharedOpen($('shared-select').value)}catch(e){sharedStatus(e.message)}};
@@ -709,43 +709,40 @@ async function downloadPdfDirect(){
 $('tab-import').onclick=showImport;$('back').onclick=showImport;$('tab-edit').onclick=showEdit;$('review').onclick=showEdit;$('print').onclick=downloadPdfDirect;refresh();
 </script>
 <script>
-/* Local multi-document library. Disabled for cloud documents to prevent overwriting shared state. */
+/* Cloud-only document library. Never load or write local document snapshots. */
 (function(){
- if(new URLSearchParams(location.search).has('doc')){
-  const open=document.getElementById('document-library-open');
-  if(open)open.onclick=()=>{document.getElementById('shared-select')?.focus();document.getElementById('shared-select')?.scrollIntoView({block:'nearest'});};
-  return;
- }
- const INDEX='108-studio-documents-v1', ACTIVE='108-studio-active-document-v1';
- const legacyKey='108-studio-v02';
  const el=id=>document.getElementById(id);
- const uid=()=>('d-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10));
- const clone=x=>JSON.parse(JSON.stringify(x));
- const now=()=>new Date().toISOString();
- let docs=[];let active='';let busy=false;
- const originalSave=save;
- function getIndex(){try{const a=JSON.parse(localStorage.getItem(INDEX)||'[]');return Array.isArray(a)?a.filter(x=>x&&typeof x.id==='string'&&x.data&&Array.isArray(x.data.ideas)):[]}catch{return []}}
- function persist(){localStorage.setItem(INDEX,JSON.stringify(docs));localStorage.setItem(ACTIVE,active)}
- function label(d){return d.name||'名称未設定の資料'}
- function documentName(data){return (data.client||'クライアント未設定')+'｜'+new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'})+' 企画資料'}
- function ensure(){docs=getIndex();active=localStorage.getItem(ACTIVE)||'';if(!docs.length){active=uid();docs=[{id:active,name:documentName(state),data:clone(state),updatedAt:now()}];persist()}else if(!docs.some(x=>x.id===active)){active=docs[0].id;state=clone(docs[0].data);persist()}else{const d=docs.find(x=>x.id===active);state=clone(d.data)}try{localStorage.removeItem(legacyKey)}catch(e){console.warn(e)}}
- function store(){if(busy)return true;const d=docs.find(x=>x.id===active);if(!d)return false;const previous=d.data,previousTime=d.updatedAt;d.data=clone(state);d.updatedAt=now();try{persist();return true}catch(e){d.data=previous;d.updatedAt=previousTime;try{persist()}catch{};console.warn('資料保存失敗',e);const msg=el('document-library-message');if(msg)msg.textContent='保存容量が不足しています。画像を小さくするか、不要な資料を削除してください。';return false}}
- save=store;
- function open(){render();el('document-library').classList.remove('hidden')}
- function close(){el('document-library').classList.add('hidden')}
- function switchTo(id){if(id===active){close();return}const d=docs.find(x=>x.id===id);if(!d)return;store();busy=true;active=id;state=clone(d.data);if(!Array.isArray(state.pageOrder))state.pageOrder=initialPages();state.selected=0;state.selectedPage=0;persist();busy=false;refresh();close();showImport();window.scrollTo(0,0)}
- function create(copy){store();const source=copy?clone(state):{client:state.client,groupColor:state.groupColor,frontmatter:true,ideas:[],selected:0,pageOrder:[],selectedPage:0};const name=copy?(label(docs.find(x=>x.id===active))+'（コピー）'):documentName(source);const id=uid();const item={id,name,data:source,updatedAt:now()};docs.unshift(item);try{persist()}catch(e){docs.shift();alert('保存容量が不足しています。不要な資料を削除してください。');return}switchTo(id)}
- function rename(id){const d=docs.find(x=>x.id===id);if(!d)return;const name=prompt('資料名を入力してください',d.name);if(name===null)return;const value=name.trim();if(!value){alert('資料名を入力してください');return}d.name=value.slice(0,150);persist();render()}
- function remove(id){const d=docs.find(x=>x.id===id);if(!d)return;if(!confirm('「'+label(d)+'」を完全に削除しますか？\nこのブラウザから削除され、元に戻せません。'))return;docs=docs.filter(x=>x.id!==id);if(!docs.length){const fresh={client:state.client,groupColor:state.groupColor,frontmatter:true,ideas:[],selected:0,pageOrder:[],selectedPage:0};const next=uid();docs=[{id:next,name:documentName(fresh),data:fresh,updatedAt:now()}]}if(id===active){const next=docs[0];active=next.id;busy=true;state=clone(next.data);persist();busy=false;refresh();showImport()}else persist();render()}
- function render(){const list=el('document-library-list');list.replaceChildren();for(const d of docs.slice().sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)))){const row=document.createElement('div');row.className='doc-library-item'+(d.id===active?' current':'');const info=document.createElement('div');info.className='doc-library-info';const title=document.createElement('div');title.className='doc-library-title';title.textContent=label(d)+(d.id===active?'　● 編集中':'');const meta=document.createElement('div');meta.className='doc-library-meta';meta.textContent=(d.data.client||'クライアント未設定')+'｜'+d.data.ideas.length+'企画｜最終保存 '+new Date(d.updatedAt).toLocaleString('ja-JP');info.append(title,meta);const actions=document.createElement('div');actions.className='doc-library-buttons';for(const [txt,fn,klass] of [[d.id===active?'表示中':'開く',()=>switchTo(d.id),''],['名前変更',()=>rename(d.id),'secondary'],['削除',()=>remove(d.id),'danger']]){const b=document.createElement('button');b.type='button';b.textContent=txt;b.className=klass;b.disabled=txt==='表示中';b.onclick=fn;actions.append(b)}row.append(info,actions);list.append(row)}}
- ensure();refresh();
+ const modal=el('document-library'),list=el('document-library-list');
+ function close(){modal.classList.add('hidden')}
+ async function open(){modal.classList.remove('hidden');await sharedList();render()}
+ function render(){
+  list.replaceChildren();
+  for(const d of sharedDocuments){
+   const row=document.createElement('div');row.className='doc-library-item'+(d.id===sharedId?' current':'');
+   const info=document.createElement('div');info.className='doc-library-info';
+   const title=document.createElement('div');title.className='doc-library-title';title.textContent=d.name+(d.id===sharedId?' ● 表示中':'');
+   const meta=document.createElement('div');meta.className='doc-library-meta';meta.textContent='共有資料 / '+new Date(d.updatedAt).toLocaleString('ja-JP');
+   info.append(title,meta);
+   const btn=document.createElement('button');btn.textContent=d.id===sharedId?'表示中':'開く';btn.disabled=d.id===sharedId;
+   btn.onclick=async()=>{try{await sharedOpen(d.id,true);close();showImport()}catch(e){el('document-library-message').textContent='読み込み失敗：'+e.message}};
+   row.append(info,btn);list.append(row);
+  }
+ }
+ async function create(copy){
+  const client=copy?state.client:prompt('クライアント名を入力してください',state.client||'');
+  if(!client)return;
+  const source=copy?structuredClone(state):{client,groupColor:profiles.find(p=>p.name===client)?.color||'#fbf3d9',frontmatter:true,ideas:[],selected:0,pageOrder:[],selectedPage:0};
+  source.client=client;
+  const name=client+' SNS撮影企画案'+(copy?'（コピー）':'');
+  try{const d=await sharedAPI('',{name,data:source});await sharedList();await sharedOpen(d.id,true);close();showImport()}
+  catch(e){el('document-library-message').textContent='作成失敗：'+e.message}
+ }
  el('document-library-open').onclick=open;
  el('document-library-close').onclick=close;
  el('document-new').onclick=()=>create(false);
  el('document-duplicate').onclick=()=>create(true);
- el('document-library').addEventListener('click',e=>{if(e.target===el('document-library'))close()});
+ modal.addEventListener('click',e=>{if(e.target===modal)close()});
  window.addEventListener('keydown',e=>{if(e.key==='Escape')close()});
- window.addEventListener('beforeunload',store);
 })();
 </script>
 <script>
