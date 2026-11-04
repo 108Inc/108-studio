@@ -525,6 +525,21 @@ $('group-color').oninput=e=>{state.groupColor=e.target.value;activeProfileId=nul
 $('client-save').onclick=()=>{const name=$('client').value.trim();const color=$('group-color').value;if(!name){profileMessage('クライアント名を入力してください。');return}if(profiles.some(p=>p.name===name&&p.id!==activeProfileId)){profileMessage('同じ名前が登録済みです。別の名前にしてください。');return}let p=profiles.find(p=>p.id===activeProfileId);if(p){p.name=name;p.color=color;p.channel=$('client-slack-channel').value;p.textMode=$('client-text-mode').value}else{p={textMode:$('client-text-mode').value,channel:$('client-slack-channel').value,id:'client-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),name,color};profiles.push(p)}activeProfileId=p.id;state.brandTextMode=p.textMode;save();saveProfiles();renderPages();profileUI();profileMessage('クライアント設定を保存しました。開いている資料の内容は変更していません。')};
 $('client-new').onclick=()=>{activeProfileId=null;$('client').value='';$('group-color').value='#dceafb';$('client-slack-channel').value='';$('client').focus();profileMessage('名前と色を入力して「この設定を保存」を押してください。')};
 $('client-delete').onclick=()=>{const p=profiles.find(p=>p.id===activeProfileId);if(!p)return;if(!confirm('「'+p.name+'」の登録設定を削除しますか？ 現在の企画や資料は削除されません。'))return;profiles=profiles.filter(x=>x.id!==activeProfileId);activeProfileId=null;saveProfiles();profileUI();profileMessage('登録を削除しました。現在の資料はそのまま残っています。')};
+async function currentClientSlackChannel(){
+ const client=String(state.client||'').replace(/様$/,'').trim();
+ try{
+  const response=await fetch('/api/clients',{credentials:'include'});
+  if(!response.ok)throw Error('クライアント設定を取得できませんでした');
+  const payload=await response.json();
+  const config=(payload.clients||[]).find(p=>String(p.name||'').replace(/様$/,'').trim()===client);
+  if(config?.channel)return config.channel;
+  const local=profiles.find(p=>String(p.name||'').replace(/様$/,'').trim()===client);
+  return local?.channel||'';
+ }catch(e){
+  console.warn('Slack client setting lookup failed',e);
+  return profiles.find(p=>String(p.name||'').replace(/様$/,'').trim()===client)?.channel||'';
+ }
+}
 let slackChannels=[];let slackMessages=[];
 function slackIdeaFromMessage(m){
  const raw=normalizeSlackText(m.text||'').trim();
@@ -574,7 +589,7 @@ function slackAlreadyImported(m,idea){const normalized=normalizeSlackText(m.text
 async function slackGET(path,params={}){const url=new URL(path,location.origin);Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,v));const r=await fetch(url,{credentials:'same-origin'});const j=await r.json();if(!r.ok)throw Error(j.error||'Slackの取得に失敗しました');return j}
 async function loadSlackChannels(){const selected=profiles.find(p=>p.id===activeProfileId)?.channel||$('client-slack-channel').value;try{const data=await slackGET('/api/slack/channels');slackChannels=data.channels;const el=$('client-slack-channel');el.replaceChildren();el.add(new Option('未設定',''));for(const c of slackChannels)el.add(new Option('#'+c.name,c.id));if(selected&&!slackChannels.some(c=>c.id===selected))el.add(new Option('登録済みのチャンネル（現在アクセス不可）',selected));el.value=selected;$('slack-msg').textContent='Slackチャンネルを取得しました'}catch(e){$('slack-msg').textContent=e.message;const el=$('client-slack-channel');if(selected&&!Array.from(el.options).some(x=>x.value===selected))el.add(new Option('登録済みチャンネル',selected));el.value=selected}}
 $('slack-refresh-channels').onclick=loadSlackChannels;
-$('slack-load-threads').onclick=async()=>{const channel=profiles.find(p=>p.id===activeProfileId)?.channel;if(!channel){$('slack-msg').textContent='クライアント設定でSlackチャンネルを選び「この設定を保存」してください';return}try{const data=await slackGET('/api/slack/threads',{channel});const select=$('slack-thread');select.replaceChildren();for(const t of data.threads)select.add(new Option(t.title+'｜'+(t.date||'日付不明')+'｜返信'+t.replies+'件',t.ts));if(!data.threads.length)select.add(new Option('確定企画スレッドが見つかりません',''));$('slack-import-preview').classList.add('hidden');$('slack-msg').textContent=data.threads.length+'件の確定企画スレッドが見つかりました'+(data.threads.length?'':'（確認した投稿'+(data.diagnostics?.scanned??0)+'件・キーワード一致'+(data.diagnostics?.matched??0)+'件'+(data.diagnostics?.more?'・さらに古い投稿あり':'')+'）。見つからない場合は親メッセージの文面とBotの参加チャンネルを確認してください。')}catch(e){$('slack-msg').textContent=e.message}};
+$('slack-load-threads').onclick=async()=>{const channel=await currentClientSlackChannel();if(!channel){$('slack-msg').textContent='クライアント設定でSlackチャンネルを選び「この設定を保存」してください';return}try{const data=await slackGET('/api/slack/threads',{channel});const select=$('slack-thread');select.replaceChildren();for(const t of data.threads)select.add(new Option(t.title+'｜'+(t.date||'日付不明')+'｜返信'+t.replies+'件',t.ts));if(!data.threads.length)select.add(new Option('確定企画スレッドが見つかりません',''));$('slack-import-preview').classList.add('hidden');$('slack-msg').textContent=data.threads.length+'件の確定企画スレッドが見つかりました'+(data.threads.length?'':'（確認した投稿'+(data.diagnostics?.scanned??0)+'件・キーワード一致'+(data.diagnostics?.matched??0)+'件'+(data.diagnostics?.more?'・さらに古い投稿あり':'')+'）。見つからない場合は親メッセージの文面とBotの参加チャンネルを確認してください。')}catch(e){$('slack-msg').textContent=e.message}};
 function updateSlackSelection(){
  const boxes=[...$('slack-preview-list').querySelectorAll('input[data-slack-index]')];
  const checked=boxes.filter(cb=>cb.checked).length;
