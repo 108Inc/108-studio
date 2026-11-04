@@ -602,7 +602,7 @@ $('slack-select-all').addEventListener('change',e=>{for(const cb of $('slack-pre
 $('slack-clear-selection').addEventListener('click',()=>{for(const cb of $('slack-preview-list').querySelectorAll('input[data-slack-index]'))cb.checked=false;updateSlackSelection()});
 $('slack-preview-list').addEventListener('change',e=>{if(e.target.matches('input[data-slack-index]'))updateSlackSelection()});
 $('slack-preview').onclick=async()=>{
- const channel=profiles.find(p=>p.id===activeProfileId)?.channel,ts=$('slack-thread').value;
+ const channel=await currentClientSlackChannel(),ts=$('slack-thread').value;
  if(!channel||!ts){$('slack-msg').textContent='クライアントと確定企画スレッドを選んでください';return}
  try{
   const data=await slackGET('/api/slack/replies',{channel,ts});slackMessages=groupSlackProposalMessages(data.messages);
