@@ -319,8 +319,18 @@ def render_native_pdf(markup):
         except Exception as exc:
             temp_path.unlink(missing_ok=True)
             raise RuntimeError('Japanese PDF font installation failed; check Render build command and network access: '+str(exc)[:120]) from exc
-    # Avoid embedding a multi-megabyte CJK font as base64 in every PDF page.
-    # Chromium resolves the font directly from the OS fontconfig registry.
+    # Ensure the runtime-downloaded font is visible to Chromium's fontconfig.
+    # A font sitting in /tmp is not automatically discovered by fc-match.
+    import shutil
+    installed_dir=Path.home()/'.local/share/fonts'
+    installed_dir.mkdir(parents=True,exist_ok=True)
+    installed_font=installed_dir/'NotoSansCJKjp-Regular.otf'
+    if font_path.resolve()!=installed_font.resolve():
+        shutil.copyfile(font_path,installed_font)
+    subprocess.run(['fc-cache','-f',str(installed_dir)],check=True,timeout=30)
+    actual_font=subprocess.run(['fc-match','-f','%{file}','Noto Sans CJK JP'],capture_output=True,text=True,check=True,timeout=10).stdout.strip()
+    if not actual_font or not Path(actual_font).is_file() or 'NotoSansCJK' not in Path(actual_font).name:
+        raise RuntimeError('Japanese font is not registered with fontconfig: '+actual_font[:160])
     font_css='<style>html,body,.page,.page *{font-family:"Noto Sans CJK JP",sans-serif!important}</style>'
     markup=font_css+markup
     with sync_playwright() as pw:
