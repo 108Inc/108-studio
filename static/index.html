@@ -431,24 +431,25 @@ function referenceUrlFromDojoRaw(raw){
    if(inReference)break;
    inReference=/^(参考動画URL|参考動画|参考URL|参考リンク|参考ミーム)$/.test(key);
    if(!inReference)continue;
-   const inline=heading[2].match(/https?:\/\/[^\s<>＜＞"'「」]+/);
-   if(inline)return inline[0].replace(/[、。。，,）)]+$/,'');
+   const inline=heading[2].match(/https?:\/\/[^\s<>＜＞"'「」\])]+/);
+   if(inline)return inline[0].replace(/[、。。，,]+$/,'');
    continue;
   }
   if(inReference){
-   const match=line.match(/https?:\/\/[^\s<>＜＞"'「」]+/);
-   if(match)return match[0].replace(/[、。。，,）)]+$/,'');
+   const match=line.match(/https?:\/\/[^\s<>＜＞"'「」\])]+/);
+   if(match)return match[0].replace(/[、。。，,]+$/,'');
   }
  }
  return '';
 }
 function repairImportedReference(d){
- if(!d||!d.dojoId||!d.dojoRaw)return;
- const original=referenceUrlFromDojoRaw(d.dojoRaw);
+ if(!d||!d.dojoId)return;
+ const original=referenceUrlFromDojoRaw(d.dojoRaw||'')||decodeImport(d.dojoReferenceUrl||'').trim();
  if(!original)return;
  const current=decodeImport(d.url||'').trim();
- // Restore only links that were truncated during the old import; preserve user edits.
- if(!current||original.startsWith(current)&&original.length>current.length)d.url=original;
+ const truncated=/^https?:\/\/(?:www\.)?tiktok\.com\/@$/i.test(current)
+  || /^https?:\/\/(?:www\.)?tiktok\.com\/@[^/]*$/i.test(current)&&original.startsWith(current)&&original.length>current.length;
+ if(!current||truncated||original.startsWith(current)&&original.length>current.length)d.url=original;
 }
 function repairImportedAim(d){
  if(!d||typeof d!=='object')return;
@@ -769,6 +770,10 @@ function dojoIdeaToStudio(item){
  }
  if(!idea.url&&item.reference_url)idea.url=decodeImport(item.reference_url);
  idea.dojoRaw=raw;
+ idea.dojoReferenceUrl=decodeImport(item.reference_url||'');
+ repairImportedReference({...idea,dojoId:item.id});
+ const original=referenceUrlFromDojoRaw(raw)||idea.dojoReferenceUrl;
+ if(original)idea.url=original;
  return idea;
 }
 $('dojo-import').onclick=()=>{
