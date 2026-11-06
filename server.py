@@ -189,7 +189,7 @@ def sign(value):
     return hmac.new(SECRET.encode(), value.encode(), hashlib.sha256).hexdigest()
 
 def encode_session(email):
-    payload = base64.urlsafe_b64encode(json.dumps({'email': email, 'exp': int(time.time()) + 28800}).encode()).decode().rstrip('=')
+    payload = base64.urlsafe_b64encode(json.dumps({'email': email, 'exp': int(time.time()) + 604800}).encode()).decode().rstrip('=')
     return payload + '.' + sign(payload)
 
 def current_user(cookie):
@@ -376,7 +376,15 @@ class Handler(SimpleHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == '/health': return self.send_json({'ok': True})
         user = current_user(self.headers.get('Cookie', ''))
-        if path == '/api/me': return self.send_json({'email': user} if user else {'email': None}, 200 if user else 401)
+        if path == '/api/me':
+            if user:
+                body=json.dumps({'email':user},ensure_ascii=False).encode()
+                self.send_response(200)
+                self.send_header('Content-Type','application/json; charset=utf-8')
+                self.send_header('Content-Length',str(len(body)))
+                self.send_header('Set-Cookie','studio_session='+encode_session(user)+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800')
+                self.end_headers();self.wfile.write(body);return
+            return self.send_json({'email':None},401)
         if not user:
             if path in ('/', '/index.html'):
                 return self.send_bytes(LOGIN.replace('__CLIENT_ID__', json.dumps(CLIENT_ID)).encode())
@@ -733,7 +741,7 @@ class Handler(SimpleHTTPRequestHandler):
             session = encode_session(email)
             result = b'{"ok":true}'
             self.send_response(200); self.send_header('Content-Type', 'application/json')
-            self.send_header('Set-Cookie', 'studio_session=' + session + '; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=28800')
+            self.send_header('Set-Cookie', 'studio_session=' + session + '; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800')
             self.send_header('Content-Length', str(len(result))); self.end_headers(); self.wfile.write(result)
         except Exception as e: self.send_json({'error': str(e)}, 403)
 
