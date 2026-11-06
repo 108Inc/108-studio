@@ -887,11 +887,14 @@ async function downloadPdfDirect(approvedSnapshot=false,approvedVersion=null){
    const idea=Number.isInteger(ideaIndex)?state.ideas[ideaIndex]:null;
    clone.querySelectorAll('.proposal-free-note').forEach(note=>{
     const source=page.querySelector('.free-note-input');
-    const value=idea&&typeof idea.freeNote==='string'?idea.freeNote:(source?.value||'');
+    const value=(source?.value||'').trim()?(source.value):(idea&&typeof idea.freeNote==='string'?idea.freeNote:'');
     if(idea?.freeNoteHidden||!value.trim()){note.remove();return}
     note.querySelectorAll('.note-drag-handle,.free-note-edit-button,.free-note-remove-button').forEach(control=>control.remove());
     const output=document.createElement('div');output.className='free-note-pdf-text';output.textContent=value;
     note.replaceChildren(output);
+    note.style.setProperty('display','block','important');
+    note.style.setProperty('visibility','visible','important');
+    note.style.setProperty('opacity','1','important');
    });
    clone.querySelectorAll('.free-note-restore-button').forEach(button=>button.remove());
    clone.querySelectorAll('.free-workspace').forEach(area=>{
@@ -918,6 +921,8 @@ async function downloadPdfDirect(approvedSnapshot=false,approvedVersion=null){
   .pdf-native-root .proposal-free-note{min-height:0!important;outline:none!important;background:transparent!important;padding:0!important}
   .pdf-native-root .free-note-pdf-text{white-space:pre-wrap!important;overflow-wrap:anywhere!important;font:inherit!important;color:inherit!important;line-height:1.5!important}
   .pdf-native-root .proposal-free-note{height:auto!important;min-height:0!important;overflow:visible!important}
+  .pdf-native-root .free-note-pdf-text{display:block!important;position:relative!important;visibility:visible!important;opacity:1!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important;font-family:'Noto Sans JP',sans-serif!important;font-size:14px!important;font-weight:400!important;line-height:1.6!important;color:#17263e!important;min-height:1em!important}
+  .pdf-native-root .free-workspace .proposal-free-note.movable-note{display:block!important;visibility:visible!important;opacity:1!important;overflow:visible!important;max-height:none!important;height:auto!important;min-height:0!important;padding:0!important;z-index:20!important}
   .pdf-native-root .free-workspace{border:0!important;background:transparent!important}
   .pdf-native-root .free-tools,.pdf-native-root .free-image-delete,.pdf-native-root .free-image-resize,.pdf-native-root .thumb-upload-label,.pdf-native-root .thumb-upload-note,.pdf-native-root .thumb-overlay,.pdf-native-root .inline-ai-button,.pdf-native-root .inline-ai-trigger{display:none!important}
   .pdf-native-root .thumb-print-link{display:block!important;position:absolute!important;inset:0!important;z-index:3!important}
@@ -925,6 +930,8 @@ async function downloadPdfDirect(approvedSnapshot=false,approvedVersion=null){
   .pdf-native-root .page.selected-preview{outline:none!important}
   .pdf-native-root .page .footer,.pdf-native-root .page .page-number{display:none!important}
   `;
+  const expectedNotes=pages.map(page=>page.querySelector('.free-note-input')?.value||'').filter(v=>v.trim());
+  if(expectedNotes.length&&!wrapper.querySelector('.free-note-pdf-text'))throw Error('自由記入欄の文章をPDFへ変換できませんでした。出力を中止しました');
   const html='<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>'+styles+'\n'+pdfStyle+'</style></head><body>'+wrapper.outerHTML+'</body></html>';
   const response=await fetch('/api/export-pdf',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({html,docId:sharedId,revision:approvedSnapshot?approvedVersion:sharedRev})});
   if(!response.ok){let error;try{error=(await response.json()).error}catch(e){}throw Error(error||'PDF生成エラー ('+response.status+')')}
