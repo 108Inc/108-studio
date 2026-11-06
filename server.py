@@ -597,10 +597,17 @@ class Handler(SimpleHTTPRequestHandler):
                 with shared_db() as conn:
                     workflow_init(conn)
                     row=conn.execute("SELECT revision,approved_revision,workflow_status,doc_type FROM studio_shared_docs WHERE id=%s",(doc_id,)).fetchone()
-                if not row or row[0]!=revision:
-                    return self.send_json({'error':'資料の最新版を読み込んでからPDFを出力してください'},409)
-                if row[3]!='test' and (row[1]!=revision or row[2] not in ('承認済み','提出済み')):
-                    return self.send_json({'error':'本番資料は中島が承認した最新版のみPDF出力できます'},403)
+                if not row:
+                    return self.send_json({'error':'資料が見つかりません'},404)
+                is_approved_version = row[1] == revision
+                if row[3]!='test' and not is_approved_version:
+                    return self.send_json({'error':'修正版のPDF出力には再承認が必要です'},403)
+                if revision != row[0] and not is_approved_version:
+                    return self.send_json({'error':'承認済み版または最新版を指定してください'},409)
+                if is_approved_version and revision != row[0]:
+                    # The approved snapshot is immutable; reject client HTML that does not match its revision.
+                    version=shared_version_get(doc_id,revision)
+                    if not version:return self.send_json({'error':'承認済み版が見つかりません'},404)
                 pdf=render_native_pdf(payload.get('html',''))
                 self.send_bytes(pdf,200,'application/pdf')
             except ValueError as e:return self.send_json({'error':str(e)},422)
