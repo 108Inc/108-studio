@@ -97,7 +97,7 @@ def workflow_action(doc_id, action, user, body):
             if target_week is not None and (not isinstance(target_week,str) or (target_week and not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}',target_week))):return {'error':'対象週が不正です'},422
             conn.execute("UPDATE studio_shared_docs SET due_date=%s,owner_email=%s,doc_type=COALESCE(%s,doc_type),target_week=COALESCE(%s,target_week) WHERE id=%s",(due,owner,doc_type,target_week,doc_id))
         elif action=='request':
-            conn.execute("UPDATE studio_shared_docs SET workflow_status='承認待ち',approved_revision=NULL WHERE id=%s",(doc_id,))
+            conn.execute("UPDATE studio_shared_docs SET workflow_status='承認待ち' WHERE id=%s",(doc_id,))
         elif action=='approve':
             if user!=APPROVER_EMAIL:return {'error':'中島のGoogleアカウントのみ承認できます'},403
             if status!='承認待ち':return {'error':'承認待ちではありません'},409
@@ -113,7 +113,7 @@ def workflow_action(doc_id, action, user, body):
                 page=note.get('page',0)
                 if not message or len(message)>1000 or type(page)!=int or not 0<=page<=500:return {'error':'指摘内容を確認してください'},422
                 clean.append({'page':page,'text':message,'by':user})
-            conn.execute("UPDATE studio_shared_docs SET workflow_status='差し戻し',approved_revision=NULL,review_notes=%s WHERE id=%s",(__import__('psycopg').types.json.Jsonb(clean),doc_id))
+            conn.execute("UPDATE studio_shared_docs SET workflow_status='差し戻し',review_notes=%s WHERE id=%s",(__import__('psycopg').types.json.Jsonb(clean),doc_id))
         elif action=='submit':
             if status not in ('承認済み','提出済み') or approved!=revision:return {'error':'最新版の承認が必要です'},409
             conn.execute("UPDATE studio_shared_docs SET workflow_status='提出済み',submitted_at=NOW() WHERE id=%s",(doc_id,))
@@ -165,7 +165,7 @@ def shared_update(doc_id,revision,data,user):
     with shared_db() as conn:
         shared_init(conn)
         workflow_init(conn)
-        row=conn.execute("""UPDATE studio_shared_docs SET data=%s,revision=revision+1,workflow_status='作成中',approved_revision=NULL,
+        row=conn.execute("""UPDATE studio_shared_docs SET data=%s,revision=revision+1,workflow_status='作成中',
             updated_by=%s,updated_at=NOW() WHERE id=%s AND revision=%s
             RETURNING revision""",(__import__('psycopg').types.json.Jsonb(data),user,doc_id,revision)).fetchone()
         if row:
