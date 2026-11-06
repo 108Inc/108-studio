@@ -391,6 +391,18 @@ function fieldEditor(){
  const heading=document.createElement('p');heading.className='hint';heading.textContent='選択中：'+(d.title||'無題の企画');root.append(heading);
  const details=document.createElement('details');details.className='side-section';details.open=!!d.dojoRaw;const summary=document.createElement('summary');summary.textContent=d.dojoRaw?'108道場の原文を確認':'Slack原文を確認';details.append(summary);
  const pre=document.createElement('pre');pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;font-size:12px';pre.textContent=d.dojoRaw||d.originalSlackText||'この企画には原文が保存されていません。';details.append(pre);root.append(details);
+ const fbDetails=document.createElement('details');fbDetails.className='side-section';fbDetails.open=!!d.dojoId;
+ const fbSummary=document.createElement('summary');fbSummary.textContent='108道場｜中島FB';fbDetails.append(fbSummary);
+ const fbPre=document.createElement('pre');fbPre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;font-size:12px';
+ fbPre.textContent=d.dojoId?'中島FBを取得中…':'108道場から取り込んだ企画ではありません。';
+ fbDetails.append(fbPre);root.append(fbDetails);
+ if(d.dojoId){
+  const params=new URLSearchParams({id:String(d.dojoId),client:String(state.client||'').replace(/様$/,'').trim()});
+  fetch('/api/dojo/feedback?'+params,{credentials:'include'}).then(async r=>{const x=await r.json();if(!r.ok)throw Error(x.error||'取得失敗');return x.feedback})
+  .then(fb=>{if(fbPre.isConnected)fbPre.textContent=fb?(fb.fb_text||fb.fb_raw||'中島FBはまだ登録されていません。'):'該当する企画が見つかりません。'})
+  .catch(()=>{if(fbPre.isConnected)fbPre.textContent='中島FBを取得できませんでした。'});
+ }
+
  const urlSection=document.createElement('section');urlSection.className='side-section';
  const urlHeading=document.createElement('h3');urlHeading.textContent='参考動画リンクを編集';urlSection.append(urlHeading);
  const urlHint=document.createElement('p');urlHint.className='hint';urlHint.textContent='Slackから取り込んだURLを変更できます。PDFの「クリックで参考へ」にも反映されます。';urlSection.append(urlHint);
