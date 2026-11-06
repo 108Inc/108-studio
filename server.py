@@ -603,7 +603,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if not row:
                     return self.send_json({'error':'資料が見つかりません'},404)
                 is_approved_version = row[1] == revision
-                if row[3]!='test' and not is_approved_version:
+                if row[3]!='test' and not is_approved_version and current_user(self.headers.get('Cookie',''))!=APPROVER_EMAIL:
                     return self.send_json({'error':'修正版のPDF出力には再承認が必要です'},403)
                 if revision != row[0] and not is_approved_version:
                     return self.send_json({'error':'承認済み版または最新版を指定してください'},409)
