@@ -896,17 +896,6 @@ async function downloadPdfDirect(approvedSnapshot=false,approvedVersion=null){
     note.style.setProperty('visibility','visible','important');
     note.style.setProperty('opacity','1','important');
    });
-   // Present reference images and supplementary copy as a coherent storyboard in the PDF.
-   // The editor's draggable coordinates remain unchanged.
-   clone.querySelectorAll('.free-workspace').forEach(area=>{
-    const images=[...area.querySelectorAll('.free-image')];
-    const note=area.querySelector('.free-note-pdf-text');
-    if(!images.length)return;
-    area.classList.add('pdf-storyboard');
-    const layer=area.querySelector('.free-image-layer');
-    if(layer){layer.classList.add('pdf-storyboard-images');images.forEach(image=>{image.style.removeProperty('left');image.style.removeProperty('top');image.style.removeProperty('width');image.style.removeProperty('height')})}
-    if(note){const container=note.closest('.proposal-free-note');container.classList.add('pdf-storyboard-copy');container.style.removeProperty('left');container.style.removeProperty('top');container.style.removeProperty('width')}
-   });
    clone.querySelectorAll('.free-note-restore-button').forEach(button=>button.remove());
    clone.querySelectorAll('.free-workspace').forEach(area=>{
     if(!area.querySelector('.proposal-free-note')&&!area.querySelector('.free-image img'))area.remove();
@@ -937,12 +926,6 @@ async function downloadPdfDirect(approvedSnapshot=false,approvedVersion=null){
   .pdf-native-root .proposal-free-note{height:auto!important;min-height:0!important;overflow:visible!important}
   .pdf-native-root .free-note-pdf-text{display:block!important;position:relative!important;visibility:visible!important;opacity:1!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important;font-family:'Noto Sans JP',sans-serif!important;font-size:14px!important;font-weight:400!important;line-height:1.6!important;color:#17263e!important;min-height:1em!important}
   .pdf-native-root .free-workspace .proposal-free-note.movable-note{display:block!important;visibility:visible!important;opacity:1!important;overflow:visible!important;max-height:none!important;height:auto!important;min-height:0!important;padding:0!important;z-index:20!important}
-  .pdf-native-root .free-workspace.pdf-storyboard{display:flex!important;flex-direction:column!important;justify-content:flex-start!important;gap:14px!important;padding:10px 12px!important;overflow:hidden!important}
-  .pdf-native-root .pdf-storyboard .pdf-storyboard-images{position:relative!important;inset:auto!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;align-items:center!important;justify-items:center!important;gap:16px!important;width:100%!important;height:auto!important;min-height:0!important;margin:0!important;flex:0 0 auto!important;pointer-events:none!important}
-  .pdf-native-root .pdf-storyboard .pdf-storyboard-images .free-image{position:relative!important;inset:auto!important;width:100%!important;max-width:165px!important;height:165px!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important;border:0!important;box-shadow:none!important;background:transparent!important}
-  .pdf-native-root .pdf-storyboard .pdf-storyboard-images .free-image img{width:100%!important;height:100%!important;max-height:none!important;object-fit:contain!important}
-  .pdf-native-root .pdf-storyboard .pdf-storyboard-copy{position:relative!important;inset:auto!important;width:100%!important;max-width:none!important;flex:0 0 auto!important;border-top:1px solid #dce3ed!important;padding:12px 4px 0!important}
-  .pdf-native-root .pdf-storyboard .pdf-storyboard-copy .free-note-pdf-text{font-size:12px!important;line-height:1.65!important;letter-spacing:.015em!important}
   .pdf-native-root .free-workspace{border:0!important;background:transparent!important}
   .pdf-native-root .free-tools,.pdf-native-root .free-image-delete,.pdf-native-root .free-image-resize,.pdf-native-root .thumb-upload-label,.pdf-native-root .thumb-upload-note,.pdf-native-root .thumb-overlay,.pdf-native-root .inline-ai-button,.pdf-native-root .inline-ai-trigger{display:none!important}
   .pdf-native-root .thumb-print-link{display:block!important;position:absolute!important;inset:0!important;z-index:3!important}
