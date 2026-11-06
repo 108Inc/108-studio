@@ -394,6 +394,21 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 print('Dojo feedback integration error:',type(exc).__name__,str(exc)[:200],flush=True)
                 return self.send_json({'error':'中島FBを取得できませんでした'},502)
+        if path == '/api/dojo/feedback':
+            url=os.getenv('DOJO_API_URL','').rstrip('/')
+            key=os.getenv('DOJO_STUDIO_API_KEY','').strip()
+            if not url or not key:return self.send_json({'error':'道場連携が未設定です'},503)
+            if not url.startswith('https://') and not url.startswith('http://localhost:'):return self.send_json({'error':'道場URLが不正です'},503)
+            params=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            idea_id=(params.get('id') or [''])[0].strip()
+            client=(params.get('client') or [''])[0].strip()
+            if not idea_id or not client:return self.send_json({'error':'IDとクライアントが必要です'},422)
+            try:
+                req=urllib.request.Request(url+'/api/studio/feedback?'+urllib.parse.urlencode({'id':idea_id,'client':client}),headers={'X-108-Integration-Key':key,'Accept':'application/json'})
+                with urllib.request.urlopen(req,timeout=15) as response:data=json.load(response)
+                return self.send_json(data)
+            except Exception:
+                return self.send_json({'error':'道場FBの取得に失敗しました'},502)
         if path == '/api/dojo/ideas':
             url=os.getenv('DOJO_API_URL','').rstrip('/')
             key=os.getenv('DOJO_STUDIO_API_KEY','').strip()
