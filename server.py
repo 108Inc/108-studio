@@ -325,12 +325,15 @@ def render_native_pdf(markup):
     installed_dir=Path.home()/'.local/share/fonts'
     installed_dir.mkdir(parents=True,exist_ok=True)
     installed_font=installed_dir/'NotoSansCJKjp-Regular.otf'
-    if font_path.resolve()!=installed_font.resolve():
+    if font_path.resolve()!=installed_font.resolve() and (not installed_font.exists() or installed_font.stat().st_size!=font_path.stat().st_size):
         shutil.copyfile(font_path,installed_font)
-    subprocess.run(['fc-cache','-f',str(installed_dir)],check=True,timeout=30)
+    # Rebuild fontconfig only when installing a new font; doing it on every PDF is slow.
+    if not getattr(render_native_pdf,'_font_ready',False):
+        subprocess.run(['fc-cache',str(installed_dir)],check=True,timeout=30)
     actual_font=subprocess.run(['fc-match','-f','%{file}','Noto Sans CJK JP'],capture_output=True,text=True,check=True,timeout=10).stdout.strip()
     if not actual_font or not Path(actual_font).is_file() or 'NotoSansCJK' not in Path(actual_font).name:
         raise RuntimeError('Japanese font is not registered with fontconfig: '+actual_font[:160])
+    render_native_pdf._font_ready=True
     # Match the editor's Noto Sans JP family. The installed CJK JP font is
     # a reliable local fallback if the Google Fonts stylesheet is unavailable.
     font_css=('<style>@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800;900&display=swap");'
