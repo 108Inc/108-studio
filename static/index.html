@@ -881,9 +881,19 @@ async function downloadPdfDirect(){
   for(const page of pages){
    const clone=page.cloneNode(true);clone.classList.remove('selected-preview');
    clone.style.setProperty('--group-color',groupColor());
+   // A textarea's live value is not part of outerHTML, so render it as text for the PDF.
+   // Keep the actual editor untouched and use the canonical saved state.
+   const ideaIndex=Number(page.dataset.ideaIndex);
+   const idea=Number.isInteger(ideaIndex)?state.ideas[ideaIndex]:null;
    clone.querySelectorAll('.proposal-free-note').forEach(note=>{
-    if(!note.textContent.trim()||note.textContent.trim()==='ここをクリックして自由に入力')note.remove();
+    const source=page.querySelector('.free-note-input');
+    const value=idea&&typeof idea.freeNote==='string'?idea.freeNote:(source?.value||'');
+    if(idea?.freeNoteHidden||!value.trim()){note.remove();return}
+    note.querySelectorAll('.note-drag-handle,.free-note-edit-button,.free-note-remove-button').forEach(control=>control.remove());
+    const output=document.createElement('div');output.className='free-note-pdf-text';output.textContent=value;
+    note.replaceChildren(output);
    });
+   clone.querySelectorAll('.free-note-restore-button').forEach(button=>button.remove());
    clone.querySelectorAll('.free-workspace').forEach(area=>{
     if(!area.querySelector('.proposal-free-note')&&!area.querySelector('.free-image img'))area.remove();
    });
@@ -906,6 +916,8 @@ async function downloadPdfDirect(){
   .pdf-native-root .proposal-page{padding:0!important}
   .pdf-native-root .proposal-body{min-height:0!important;max-height:none!important}
   .pdf-native-root .proposal-free-note{min-height:0!important;outline:none!important;background:transparent!important;padding:0!important}
+  .pdf-native-root .free-note-pdf-text{white-space:pre-wrap!important;overflow-wrap:anywhere!important;font:inherit!important;color:inherit!important;line-height:1.5!important}
+  .pdf-native-root .proposal-free-note{height:auto!important;min-height:0!important;overflow:visible!important}
   .pdf-native-root .free-workspace{border:0!important;background:transparent!important}
   .pdf-native-root .free-tools,.pdf-native-root .free-image-delete,.pdf-native-root .free-image-resize,.pdf-native-root .thumb-upload-label,.pdf-native-root .thumb-upload-note,.pdf-native-root .thumb-overlay,.pdf-native-root .inline-ai-button,.pdf-native-root .inline-ai-trigger{display:none!important}
   .pdf-native-root .thumb-print-link{display:block!important;position:absolute!important;inset:0!important;z-index:3!important}
