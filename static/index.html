@@ -916,9 +916,12 @@ async function downloadPdfDirect(approvedSnapshot=false,approvedVersion=null){
   .pdf-native-root .page{display:block;width:210mm!important;height:296.5mm!important;min-height:296.5mm!important;max-height:296.5mm!important;margin:0!important;transform:none!important;zoom:1!important;box-shadow:none!important;overflow:hidden!important;break-after:page!important;page-break-after:always!important}
   .pdf-native-root .page:last-child{break-after:auto!important;page-break-after:auto!important}
   .pdf-native-root .cover-page,.pdf-native-root .divider-page{display:flex!important;background:var(--group-color)!important}
-  .pdf-native-root .proposal-page{padding:0!important}
+  .pdf-native-root .proposal-page{display:flex!important;flex-direction:column!important;padding:0!important}
+  .pdf-native-root .proposal-page .proposal-top,.pdf-native-root .proposal-page .proposal-title{flex-shrink:0!important}
+  .pdf-native-root .proposal-page .free-workspace{display:block!important;position:relative!important;flex:1 1 auto!important;min-height:80px!important;overflow:hidden!important;margin:0 7.4mm 12mm!important}
   .pdf-native-root .proposal-body{min-height:0!important;max-height:none!important}
   .pdf-native-root .proposal-free-note{min-height:0!important;outline:none!important;background:transparent!important;padding:0!important}
+  .pdf-native-root .proposal-page .proposal-body{flex:0 1 auto!important;max-height:205mm!important;overflow:hidden!important}
   .pdf-native-root .free-note-pdf-text{white-space:pre-wrap!important;overflow-wrap:anywhere!important;font:inherit!important;color:inherit!important;line-height:1.5!important}
   .pdf-native-root .proposal-free-note{height:auto!important;min-height:0!important;overflow:visible!important}
   .pdf-native-root .free-note-pdf-text{display:block!important;position:relative!important;visibility:visible!important;opacity:1!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important;font-family:'Noto Sans JP',sans-serif!important;font-size:14px!important;font-weight:400!important;line-height:1.6!important;color:#17263e!important;min-height:1em!important}
