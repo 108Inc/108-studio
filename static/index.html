@@ -279,7 +279,7 @@ function mergeDistinctPages(base,local,remote){
  if(base.ideas.length!==local.ideas.length||base.ideas.length!==remote.ideas.length)return null;
  for(const key of new Set([...Object.keys(base),...Object.keys(local)])){
   if(key==='ideas'||key==='selected'||key==='selectedPage')continue;
-  if(!eq(base[key],local[key])){if(!eq(base[key],remote[key])&&!eq(local[key],remote[key]))return null;merged[key]=structuredClone(local[key])}
+  if(!eq(base[key],local[key])){if(!eq(base[key],remote[key])&&!eq(local[key],remote[key]))return null;merged[key]=local[key]===undefined?undefined:structuredClone(local[key])}
  }
  for(let i=0;i<base.ideas.length;i++){
   const changedLocal=!eq(base.ideas[i],local.ideas[i]);
