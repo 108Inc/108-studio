@@ -193,6 +193,9 @@ def encode_session(email):
     return payload + '.' + sign(payload)
 
 def current_user(cookie):
+    # Preview branch only: demo identity; never enable this flag on production.
+    if os.getenv('STUDIO_PREVIEW_NO_LOGIN') == 'yes':
+        return 'preview@108-studio.test'
     if not configured(): return None
     try:
         jar = http.cookies.SimpleCookie(); jar.load(cookie or '')
