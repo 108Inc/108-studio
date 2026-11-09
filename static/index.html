@@ -1532,20 +1532,31 @@ body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px
   let name=sessionStorage.getItem('studio-preview-name')||'';
   const panel=document.createElement('div');
   panel.id='studio-preview-presence';
-  panel.style.cssText='position:fixed;right:16px;bottom:16px;z-index:900;background:#fff;border:1px solid #dce3ef;box-shadow:0 4px 20px #152b4a20;border-radius:12px;padding:12px 14px;max-width:310px;font:13px system-ui;color:#243f71';
-  panel.innerHTML='<div style="font-weight:700;margin-bottom:6px">共同編集テスト｜参加者</div><div id="studio-preview-presence-users">資料を開くと表示されます</div><button type="button" id="studio-preview-presence-name" style="margin-top:8px;padding:5px 8px;border-radius:6px;border:1px solid #bbc8dc;background:#f4f7fc;color:#243f71">表示名を変更</button>';
-  document.body.appendChild(panel);
-  const users=panel.querySelector('#studio-preview-presence-users');
+  panel.style.cssText='position:fixed;top:36px;right:172px;z-index:900;font:12px system-ui;color:#243f71';
+  const trigger=document.createElement('button');
+  trigger.type='button';trigger.title='共同編集者を表示';trigger.setAttribute('aria-expanded','false');
+  trigger.style.cssText='display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;background:#eaf0fa;border:1px solid #d3deef;color:#243f71;font:600 12px system-ui;box-shadow:0 1px 5px #152b4a10';
+  const icon=document.createElement('span');icon.textContent='●';icon.style.color='#32a477';
+  const summary=document.createElement('span');summary.textContent='共同編集';
+  trigger.append(icon,summary);
+  const dropdown=document.createElement('div');
+  dropdown.style.cssText='display:none;position:absolute;top:calc(100% + 8px);right:0;width:260px;max-width:calc(100vw - 24px);background:white;border:1px solid #dce3ef;box-shadow:0 8px 26px #152b4a25;border-radius:12px;padding:14px';
+  const title=document.createElement('div');title.textContent='共同編集しているメンバー';title.style.cssText='font-weight:700;margin-bottom:8px';
+  const users=document.createElement('div');users.id='studio-preview-presence-users';users.textContent='資料を開くと表示されます';
+  const change=document.createElement('button');change.type='button';change.textContent='表示名を変更';change.style.cssText='margin-top:10px;padding:6px 10px;border-radius:6px;border:1px solid #bbc8dc;background:#f4f7fc;color:#243f71;font-size:12px';
+  dropdown.append(title,users,change);panel.append(trigger,dropdown);document.body.appendChild(panel);
+  trigger.onclick=()=>{const open=dropdown.style.display==='none';dropdown.style.display=open?'block':'none';trigger.setAttribute('aria-expanded',String(open))};
+  document.addEventListener('click',e=>{if(!panel.contains(e.target)){dropdown.style.display='none';trigger.setAttribute('aria-expanded','false')}});
+  change.onclick=askName;
   function askName(){const next=prompt('テスト用の表示名（例：中島・中田・りこ）',name||'テスト担当');if(next&&next.trim()){name=next.trim().slice(0,32);sessionStorage.setItem('studio-preview-name',name);tick()}}
-  panel.querySelector('#studio-preview-presence-name').onclick=askName;
   async function tick(){
-    const id=docId();if(!id||!/^[a-f0-9]{32}$/.test(id)){users.textContent='資料を開くと表示されます';return}
+    const id=docId();if(!id||!/^[a-f0-9]{32}$/.test(id)){users.textContent='資料を開くと表示されます';summary.textContent='共同編集';return}
     if(!name){users.textContent='表示名を設定してください';return}
     try{
       const page=String(document.querySelector('#page-counter')?.textContent||'');
       const r=await fetch('/api/preview-presence/'+id,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId,name,page})});
       if(!r.ok)throw Error('HTTP '+r.status);
-      const data=await r.json();users.replaceChildren();
+      const data=await r.json();users.replaceChildren();summary.textContent='共同編集 '+(data.users||[]).length+'人';
       for(const u of data.users||[]){const line=document.createElement('div');line.textContent=(u.clientId===clientId?'● ':'○ ')+u.name+(u.clientId===clientId?'（自分）':'')+(u.page?' · '+u.page:'');line.style.margin='4px 0';users.appendChild(line)}
     }catch(e){users.textContent='接続を確認中（資料の保存には影響しません）'}
   }
