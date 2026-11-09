@@ -334,6 +334,8 @@ async function sharedSave(){if(!sharedId||sharedBusy||sharedConflict||!sharedDir
   const latest=await sharedAPI('/'+sharedId);
   const merged=mergeDistinctPages(sharedBase,JSON.parse(snapshot),latest.data);
   if(merged){
+   // Keep an immutable backup before attempting a merged write.
+   try{localStorage.setItem('108-studio-conflict-'+sharedId,JSON.stringify({savedAt:new Date().toISOString(),revision:sharedRev,data:JSON.parse(snapshot)}))}catch(_){}
    const updated=await sharedAPI('/'+sharedId,{revision:latest.revision,data:merged});
    sharedRev=updated.revision;sharedBase=structuredClone(merged);
    if(JSON.stringify(state)===snapshot){state=merged;sharedDirty=false;renderPages()}else{sharedDirty=true}
@@ -343,7 +345,7 @@ async function sharedSave(){if(!sharedId||sharedBusy||sharedConflict||!sharedDir
    sharedStatus('最新の保存内容を確認しました / 更新 '+sharedRev);
   }else{
    sharedConflict=true;
-   sharedStatus('競合：編集内容をブラウザに退避しました。別の更新と重なっています。保存前に差分を確認してください。');
+   sharedStatus('同じ箇所が同時に変更されました。自動保存を停止し、このブラウザの内容を退避しました。［未保存データを復元］から確認してください。');
   }
  }catch(fetchError){sharedConflict=true;sharedStatus('競合：編集内容をブラウザに退避しました。最新版を確認できませんでした')}
 }else sharedStatus('共有保存失敗：'+e.message)}finally{sharedBusy=false;if(sharedDirty&&!sharedConflict){clearTimeout(sharedTimer);sharedTimer=setTimeout(sharedSave,3000)}}}
@@ -1356,6 +1358,9 @@ body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px
       const latest=await sharedAPI('/'+id);
       if(id!==sharedId||sharedDirty||sharedConflict||sharedBusy||sharedLoading)return;
       if(latest.revision<=sharedRev)return;
+      // A local edit may still be in the editor's DOM before the blur event
+      // commits it to state. Never replace the editor while it has focus.
+      if(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('#pages'))return;
       // Preserve this browser's navigation position; selected page is not a shared cursor.
       const localSelected=state.selected,localPage=state.selectedPage;
       const next=structuredClone(latest.data);
