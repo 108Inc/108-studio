@@ -18,6 +18,18 @@ def shared_db():
     import psycopg
     return psycopg.connect(url,connect_timeout=8,options='-c statement_timeout=10000')
 
+# Preview-only ephemeral presence; never touches shared document data.
+_PRESENCE = {}
+_PRESENCE_LOCK = threading.Lock()
+def preview_presence(doc_id, client_id=None, name=None, page=None):
+    now=time.time()
+    with _PRESENCE_LOCK:
+        for key, entry in list(_PRESENCE.items()):
+            if now-entry['seen']>35: del _PRESENCE[key]
+        if client_id and name:
+            _PRESENCE[(doc_id,client_id)]={'name':name[:32],'page':str(page)[:24], 'seen':now}
+        return [{'name':v['name'],'page':v['page'],'clientId':k[1]} for k,v in _PRESENCE.items() if k[0]==doc_id]
+
 def shared_init(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS studio_shared_docs (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, data JSONB NOT NULL,
@@ -193,6 +205,9 @@ def encode_session(email):
     return payload + '.' + sign(payload)
 
 def current_user(cookie):
+    # Preview branch only: demo identity; never enable this flag on production.
+    if os.getenv('STUDIO_PREVIEW_NO_LOGIN') == 'yes':
+        return 'preview@108-studio.test'
     if not configured(): return None
     try:
         jar = http.cookies.SimpleCookie(); jar.load(cookie or '')
@@ -381,6 +396,8 @@ class Handler(SimpleHTTPRequestHandler):
             if path in ('/', '/index.html'):
                 return self.send_bytes(LOGIN.replace('__CLIENT_ID__', json.dumps(CLIENT_ID)).encode())
             return self.send_json({'error': 'ログインが必要です'}, 401)
+        if os.getenv('STUDIO_PREVIEW_NO_LOGIN') == 'yes' and re.fullmatch(r'/api/preview-presence/[a-f0-9]{32}',path):
+            return self.send_json({'users':preview_presence(path.rsplit('/',1)[-1])})
         if path == '/api/dojo/feedback':
             url=os.getenv('DOJO_API_URL','').rstrip('/')
             key=os.getenv('DOJO_STUDIO_API_KEY','').strip()
@@ -524,6 +541,18 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        if os.getenv('STUDIO_PREVIEW_NO_LOGIN') == 'yes' and re.fullmatch(r'/api/preview-presence/[a-f0-9]{32}',path):
+            if not current_user(self.headers.get('Cookie','')):return self.send_json({'error':'unauthorized'},401)
+            origin=self.headers.get('Origin','');host=self.headers.get('Host','')
+            if origin and origin not in ('https://'+host,'http://'+host,'http://localhost:'+str(PORT)):return self.send_json({'error':'origin mismatch'},403)
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if not 0<length<=1024:return self.send_json({'error':'invalid size'},422)
+                body=json.loads(self.rfile.read(length))
+                cid=body.get('clientId');name=body.get('name');page=body.get('page','')
+                if not isinstance(cid,str) or not re.fullmatch(r'[a-f0-9]{32}',cid) or not isinstance(name,str) or not name.strip():return self.send_json({'error':'invalid user'},422)
+                return self.send_json({'users':preview_presence(path.rsplit('/',1)[-1],cid,name.strip(),page)})
+            except (ValueError,TypeError):return self.send_json({'error':'invalid request'},422)
         if path == '/api/clients':
             user=current_user(self.headers.get('Cookie',''))
             if not user:return self.send_json({'error':'ログインが必要です'},401)

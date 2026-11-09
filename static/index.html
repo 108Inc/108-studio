@@ -272,23 +272,58 @@ const specs=[['title','企画名','text'],['category','企画カテゴリ','sele
 function save(){try{const snapshot=JSON.stringify(state);localStorage.setItem(KEY,snapshot);if(sharedId&&snapshot.length<1200000)localStorage.setItem('108-studio-draft-'+sharedId,JSON.stringify({savedAt:new Date().toISOString(),revision:sharedRev,data:state}))}catch(e){console.warn(e)}if(!sharedLoading){if(sharedId){sharedDirty=true;if(!sharedConflict){clearTimeout(sharedTimer);sharedTimer=setTimeout(sharedSave,1300)}else sharedStatus('競合中：編集内容はこのブラウザに退避済み。クラウド未保存')}else if(cloudAutoEnabled){clearTimeout(sharedTimer);sharedTimer=setTimeout(autoCreateShared,1500)}}return true}let sharedId='',sharedRev=0,sharedLoading=false,sharedConflict=false,sharedDirty=false,sharedTimer=null,sharedBusy=false;
 let sharedBase=null;
 function mergeDistinctPages(base,local,remote){
- if(!base||!Array.isArray(base.ideas)||!Array.isArray(local.ideas)||!Array.isArray(remote.ideas))return null;
+ // Conservative recursive three-way merge. Independent text boxes can live
+ // inside nested page objects; arrays and overlapping edits stay atomic.
  const eq=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
- const merged=structuredClone(remote);
- // Never merge page additions, removals or reordered pages without review.
+ const plain=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+ const MISSING=Symbol('missing'),CONFLICT=Symbol('conflict');
+ function merge(b,l,r,depth=0){
+  if(eq(l,b))return r===MISSING?MISSING:structuredClone(r);
+  if(eq(r,b)||eq(l,r))return l===MISSING?MISSING:structuredClone(l);
+  if(depth>16||!plain(b)||!plain(l)||!plain(r))return CONFLICT;
+  const out={};
+  for(const key of new Set([...Object.keys(b),...Object.keys(l),...Object.keys(r)])){
+   const val=merge(Object.hasOwn(b,key)?b[key]:MISSING,Object.hasOwn(l,key)?l[key]:MISSING,Object.hasOwn(r,key)?r[key]:MISSING,depth+1);
+   if(val===CONFLICT)return CONFLICT;
+   if(val!==MISSING)out[key]=val;
+  }
+  return out;
+ }
+ if(!base||!local||!remote||!Array.isArray(base.ideas)||!Array.isArray(local.ideas)||!Array.isArray(remote.ideas))return null;
  if(base.ideas.length!==local.ideas.length||base.ideas.length!==remote.ideas.length)return null;
- for(const key of new Set([...Object.keys(base),...Object.keys(local)])){
+ const merged=structuredClone(remote);
+ for(const key of new Set([...Object.keys(base),...Object.keys(local),...Object.keys(remote)])){
   if(key==='ideas'||key==='selected'||key==='selectedPage')continue;
-  if(!eq(base[key],local[key])){if(!eq(base[key],remote[key])&&!eq(local[key],remote[key]))return null;merged[key]=local[key]===undefined?undefined:structuredClone(local[key])}
+  const val=merge(Object.hasOwn(base,key)?base[key]:MISSING,Object.hasOwn(local,key)?local[key]:MISSING,Object.hasOwn(remote,key)?remote[key]:MISSING);
+  if(val===CONFLICT)return null;
+  if(val===MISSING)delete merged[key];else merged[key]=val;
  }
  for(let i=0;i<base.ideas.length;i++){
-  const changedLocal=!eq(base.ideas[i],local.ideas[i]);
-  if(!changedLocal)continue;
-  if(!eq(base.ideas[i],remote.ideas[i])&&!eq(local.ideas[i],remote.ideas[i]))return null;
-  merged.ideas[i]=structuredClone(local.ideas[i]);
+  const val=merge(base.ideas[i],local.ideas[i],remote.ideas[i]);
+  if(val===CONFLICT)return null;
+  merged.ideas[i]=val;
  }
  merged.selected=local.selected;merged.selectedPage=local.selectedPage;
  return merged;
+}
+// Preview: automatically offer conflict resolution after autosave detects an overlap.
+// Never interrupt an actively edited field; leave manual recovery available on cancel.
+let autoConflictPromptPending=false,autoConflictPromptRunning=false;
+function scheduleAutoConflictPrompt(){
+ if(!sharedConflict||!sharedId||autoConflictPromptPending||autoConflictPromptRunning)return;
+ autoConflictPromptPending=true;
+ const attempt=async()=>{
+  if(!autoConflictPromptPending)return;
+  if(!sharedConflict||!sharedId){autoConflictPromptPending=false;return}
+  if(sharedBusy||sharedLoading||document.visibilityState!=='visible'||sharedIsEditing()){
+   setTimeout(attempt,700);return;
+  }
+  autoConflictPromptPending=false;autoConflictPromptRunning=true;
+  try{await resolveSharedConflict()}
+  catch(err){sharedStatus('競合の自動確認に失敗：'+err.message+'。保存ボタンから再試行できます')}
+  finally{autoConflictPromptRunning=false}
+ };
+ setTimeout(attempt,350);
 }
 let cloudAutoEnabled=false,cloudCreating=false;
 async function autoCreateShared(){
@@ -322,22 +357,131 @@ async function sharedSave(){if(!sharedId||sharedBusy||sharedConflict||!sharedDir
   const latest=await sharedAPI('/'+sharedId);
   const merged=mergeDistinctPages(sharedBase,JSON.parse(snapshot),latest.data);
   if(merged){
+   // Keep an immutable backup before attempting a merged write.
+   try{localStorage.setItem('108-studio-conflict-'+sharedId,JSON.stringify({savedAt:new Date().toISOString(),revision:sharedRev,data:JSON.parse(snapshot)}))}catch(_){}
    const updated=await sharedAPI('/'+sharedId,{revision:latest.revision,data:merged});
    sharedRev=updated.revision;sharedBase=structuredClone(merged);
    if(JSON.stringify(state)===snapshot){state=merged;sharedDirty=false;renderPages()}else{sharedDirty=true}
-   sharedConflict=false;sharedStatus('別ページの変更を統合して保存しました / 更新 '+sharedRev);
+   sharedConflict=false;sharedStatus('別々の編集欄の変更を統合して保存しました / 更新 '+sharedRev);
   }else if(JSON.stringify(latest.data)===snapshot){
    sharedRev=latest.revision;sharedBase=structuredClone(latest.data);sharedDirty=JSON.stringify(state)!==snapshot;sharedConflict=false;
    sharedStatus('最新の保存内容を確認しました / 更新 '+sharedRev);
   }else{
    sharedConflict=true;
-   sharedStatus('競合：編集内容をブラウザに退避しました。別の更新と重なっています。保存前に差分を確認してください。');
+   sharedStatus('同じ箇所が同時に変更されました。自動保存を停止し、このブラウザの内容を退避しました。［未保存データを復元］から確認してください。');scheduleAutoConflictPrompt();
   }
  }catch(fetchError){sharedConflict=true;sharedStatus('競合：編集内容をブラウザに退避しました。最新版を確認できませんでした')}
 }else sharedStatus('共有保存失敗：'+e.message)}finally{sharedBusy=false;if(sharedDirty&&!sharedConflict){clearTimeout(sharedTimer);sharedTimer=setTimeout(sharedSave,3000)}}}
+// Preview-only conflict recovery control: never discard either editor's text.
+(function(){
+ const panel=document.createElement('div');
+ panel.id='preview-conflict-recovery';
+ panel.style.cssText='display:none;position:fixed;left:16px;bottom:16px;z-index:950;max-width:340px;padding:14px;background:#fff5f2;color:#782c22;border:1px solid #e5a79a;border-radius:12px;box-shadow:0 6px 24px #0002;font:13px system-ui';
+ const title=document.createElement('strong');title.textContent='同じ文章欄の編集が重なりました';
+ const desc=document.createElement('p');desc.textContent='この画面の文章は保持しています。別の資料として保存すると、両方の編集を残せます。';
+ const button=document.createElement('button');button.type='button';button.textContent='自分の編集を別資料に保存';button.style.cssText='padding:8px 10px;border-radius:7px;background:#782c22;color:white;border:0;cursor:pointer';
+ button.onclick=async()=>{button.disabled=true;try{await manualSave()}finally{button.disabled=false;render()}};
+ panel.append(title,desc,button);document.body.appendChild(panel);
+ function render(){panel.style.display=sharedConflict&&sharedId?'block':'none'}
+ setInterval(render,500);render();
+})();
 $('shared-create').onclick=async()=>{const name=prompt('共有資料名',state.client+' SNS撮影企画案');if(!name)return;try{const d=await sharedAPI('',{name,data:state});sharedId=d.id;sharedRev=d.revision;sharedBase=structuredClone(state);sharedDirty=false;sharedConflict=false;history.replaceState(null,'',location.pathname+'?doc='+sharedId);await sharedList();sharedStatus('共有開始：このページのURLを社内に送ってください')}catch(e){sharedStatus('作成失敗：'+e.message)}};
 const restoreDraftButton=document.createElement('button');restoreDraftButton.type='button';restoreDraftButton.className='secondary';restoreDraftButton.textContent='未保存データを復元';restoreDraftButton.title='このブラウザに残った編集内容を確認・復元します';restoreDraftButton.onclick=async()=>{const id=sharedId||new URLSearchParams(location.search).get('doc');if(!id){alert('先に対象の共有資料を開いてください');return}let draft;try{const raw=localStorage.getItem('108-studio-draft-'+id)||localStorage.getItem('108-studio-conflict-'+id);if(raw)draft=JSON.parse(raw)}catch(e){alert('退避データを読み取れません：'+e.message);return}if(!draft?.data){alert('このブラウザに退避されたデータがありません');return}if(!confirm('退避データ（'+(draft.savedAt||'保存日時不明')+'）を編集画面に復元しますか？クラウドの最新版は上書きせず、復元後に保存状態を確認します。'))return;state=structuredClone(draft.data);sharedDirty=true;sharedConflict=true;renderPages();refresh();sharedStatus('退避データを復元しました。クラウドには未保存です。');alert('編集内容を復元しました。競合が残っているため自動保存は停止中です。内容を確認し、必要なら新しい共有資料として保存してください。')};$('manual-save').insertAdjacentElement('afterend',restoreDraftButton);
 $('shared-open').onclick=async()=>{try{await sharedOpen($('shared-select').value)}catch(e){sharedStatus(e.message)}};
+// Preview-only: resolve overlapping text fields within the same document.
+async function previewResolveTextConflicts(base,local,remote){
+ const eq=(a,b)=>JSON.stringify(a)===JSON.stringify(b),plain=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+ const conflicts=[],result=structuredClone(remote);
+ function walk(b,l,r,path){
+  if(eq(l,b))return;
+  if(eq(r,b)||eq(l,r)){set(path,l);return}
+  if(Array.isArray(b)&&Array.isArray(l)&&Array.isArray(r)&&b.length===l.length&&b.length===r.length){
+   for(let i=0;i<b.length;i++)walk(b[i],l[i],r[i],[...path,i]);
+   return;
+  }
+  if(plain(b)&&plain(l)&&plain(r)){
+   for(const k of new Set([...Object.keys(b),...Object.keys(l),...Object.keys(r)])){
+    if(path.length===0&&(k==='selected'||k==='selectedPage'))continue;
+    walk(b[k],l[k],r[k],[...path,k]);
+   }
+   return;
+  }
+  conflicts.push({path,local:l,remote:r});
+ }
+ function set(path,value){
+  let obj=result;for(const k of path.slice(0,-1)){if(obj[k]===undefined||obj[k]===null)return;obj=obj[k]}
+  if(value===undefined)delete obj[path[path.length-1]];else obj[path[path.length-1]]=structuredClone(value);
+ }
+ if(!base||!local||!remote||!Array.isArray(base.ideas)||base.ideas.length!==local.ideas?.length||base.ideas.length!==remote.ideas?.length)return null;
+ walk(base,local,remote,[]);
+ if(!conflicts.length)return result;
+ if(conflicts.some(c=>c.path.length===0)){sharedStatus('資料全体の競合は自動統合できません。復旧版に保存してください');return null;}
+ return new Promise(resolve=>{
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:#122342a8;z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+  const box=document.createElement('div');box.style.cssText='background:white;color:#20365d;border-radius:14px;padding:22px;max-width:820px;width:100%;max-height:85vh;overflow:auto;font:14px system-ui';
+  const heading=document.createElement('h2');heading.textContent='同時編集の変更内容を比較';box.appendChild(heading);
+  const help=document.createElement('p');help.textContent='同時に変更された項目を比較し、残す内容を選んでください。文章以外の変更も含まれる場合があります。自分の変更はブラウザに退避されています。';box.appendChild(help);
+  const choices=[];
+  for(const c of conflicts){
+   const section=document.createElement('section');section.style.cssText='border-top:1px solid #d9e1ee;padding:12px 0';
+   const label=document.createElement('strong');label.textContent='変更箇所：'+c.path.join(' / ');section.appendChild(label);
+   const row=document.createElement('div');row.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px';
+   const opts=[];
+   for(const [value,caption] of [[c.remote,'クラウド側の文章'],[c.local,'自分の文章']]){
+    const wrap=document.createElement('label');wrap.style.cssText='display:block;border:1px solid #d4ddec;border-radius:8px;padding:10px;cursor:pointer;min-width:0';
+    const radio=document.createElement('input');radio.type='radio';radio.name='conflict-'+choices.length;radio.value=caption;radio.checked=caption==='クラウド側の文章';
+    const title=document.createElement('span');title.textContent=' '+caption;const preview=document.createElement('pre');preview.textContent=typeof value==='string'?value:JSON.stringify(value,null,2)??'(削除)';preview.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font:13px system-ui;max-height:180px;overflow:auto';
+    wrap.append(radio,title,preview);row.appendChild(wrap);opts.push(radio);
+   }
+   section.appendChild(row);box.appendChild(section);choices.push({c,opts});
+  }
+  const actions=document.createElement('div');actions.style.cssText='display:flex;gap:12px;justify-content:flex-end;margin-top:18px';
+  const cancel=document.createElement('button');cancel.textContent='キャンセル（変更を保持）';cancel.onclick=()=>{overlay.remove();resolve(null)};
+  const apply=document.createElement('button');apply.textContent='選択した内容で統合';apply.style.cssText='background:#243e70;color:white;border:0;border-radius:8px;padding:10px 16px';
+  apply.onclick=()=>{for(const {c,opts} of choices)set(c.path,opts[1].checked?c.local:c.remote);overlay.remove();resolve(result)};
+  actions.append(cancel,apply);box.appendChild(actions);overlay.appendChild(box);document.body.appendChild(overlay);
+ });
+}
+// Preview-only revision history. Restoring creates a NEW revision; history is preserved.
+async function previewShowRevisionHistory(){
+ if(!sharedId){alert('先に資料を開いてください');return}
+ if(sharedDirty||sharedConflict||sharedBusy){alert('未保存または競合中の変更があります。先に保存・解決してください');return}
+ const docId=sharedId;
+ const data=await sharedAPI('/'+docId+'/versions');
+ const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:#14213eaa;z-index:99998;display:flex;align-items:center;justify-content:center;padding:18px';
+ const panel=document.createElement('div');panel.style.cssText='background:white;color:#20365d;width:min(720px,100%);max-height:85vh;overflow:auto;border-radius:14px;padding:24px;font:14px system-ui';
+ const heading=document.createElement('h2');heading.textContent='変更履歴・復元';panel.appendChild(heading);
+ const help=document.createElement('p');help.textContent='過去の保存状態を確認できます。復元すると新しい版として保存され、現在の版も履歴に残ります。';panel.appendChild(help);
+ const close=document.createElement('button');close.textContent='閉じる';close.onclick=()=>overlay.remove();panel.appendChild(close);
+ for(const v of data.versions||[]){
+  const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:12px;justify-content:space-between;border-bottom:1px solid #e0e6f0;padding:12px 0';
+  const info=document.createElement('span');info.textContent='版 '+v.revision+' · '+new Date(v.updatedAt).toLocaleString('ja-JP')+' · '+v.updatedBy;
+  const restore=document.createElement('button');restore.textContent=v.revision===sharedRev?'現在の版':'この版を復元';restore.disabled=v.revision===sharedRev;
+  restore.onclick=async()=>{
+   if(sharedDirty||sharedConflict||sharedBusy||sharedId!==docId){alert('資料が変更されています。履歴画面を閉じて状態を確認してください');return}
+   if(!confirm('版 '+v.revision+' を新しい版として復元しますか？現在の内容も履歴に残ります。'))return;
+   restore.disabled=true;
+   try{
+    const historical=await sharedAPI('/'+docId+'/versions/'+v.revision);
+    const latest=await sharedAPI('/'+docId);
+    if(latest.revision!==sharedRev){alert('他の参加者が更新しました。画面を閉じて最新状態を確認してください');return}
+    const saved=await sharedAPI('/'+docId,{revision:latest.revision,data:historical.data});
+    sharedLoading=true;
+    try{state=structuredClone(historical.data);sharedRev=saved.revision;sharedBase=structuredClone(historical.data);sharedDirty=false;sharedConflict=false;refresh();sharedStatus('版 '+v.revision+' を新しい版 '+saved.revision+' として復元しました')}finally{sharedLoading=false}
+    overlay.remove();
+   }catch(err){alert('復元に失敗しました：'+err.message)}
+   finally{restore.disabled=false}
+  };
+  row.append(info,restore);panel.appendChild(row);
+ }
+ if(!(data.versions||[]).length){const empty=document.createElement('p');empty.textContent='保存履歴はまだありません';panel.appendChild(empty)}
+ overlay.appendChild(panel);document.body.appendChild(overlay);
+}
+(function(){
+ const btn=document.createElement('button');btn.type='button';btn.textContent='変更履歴';btn.className='secondary';btn.title='過去の保存状態を確認・復元';
+ btn.onclick=()=>previewShowRevisionHistory().catch(e=>alert('変更履歴を取得できません：'+e.message));
+ const saveBtn=document.getElementById('manual-save');if(saveBtn)saveBtn.insertAdjacentElement('afterend',btn);
+})();
 async function resolveSharedConflict(){
  if(!sharedId)return false;
  const snapshot=JSON.stringify(state),originalId=sharedId;
@@ -350,8 +494,19 @@ async function resolveSharedConflict(){
   if(JSON.stringify(state)===snapshot){state=merged;sharedDirty=false;renderPages()}else sharedDirty=true;
   sharedStatus('別ページの変更を統合して保存しました');return true;
  }
+ // Try field-level visual resolution first. Keep the existing recovery-copy fallback.
+ const resolved=await previewResolveTextConflicts(sharedBase,JSON.parse(snapshot),latest.data);
+ if(resolved){
+  try{
+   const result=await sharedAPI('/'+originalId,{revision:latest.revision,data:resolved});
+   sharedRev=result.revision;sharedBase=structuredClone(resolved);sharedConflict=false;
+   if(JSON.stringify(state)===snapshot){state=resolved;sharedDirty=false;renderPages()}else sharedDirty=true;
+   sharedStatus('競合した文章を選択して統合しました / 更新 '+sharedRev);
+   return true;
+  }catch(err){if(err.status===409){sharedStatus('統合中に他の更新が入りました。再度保存してください');return false}throw err}
+ }
  // Same-page conflict: never overwrite remote changes. Preserve all local work as a separate shared document.
- if(!confirm('同じページに別の変更があります。元の共有資料を上書きせず、現在の編集内容を「競合復旧版」として新しい共有資料に保存しますか？'))return false;
+ if(!confirm('同じ文章欄が同時に編集されました。両方の内容を守るため、あなたの編集を「競合復旧版」として別資料に保存します。元の共有資料は変更しません。続けますか？'))return false;
  const originalName=sharedDocuments.find(d=>d.id===originalId)?.name||state.client||'資料';
  const copy=await sharedAPI('',{name:originalName+'（競合復旧版 '+new Date().toLocaleString('ja-JP')+'）',data:JSON.parse(snapshot)});
  sharedId=copy.id;sharedRev=copy.revision;sharedBase=JSON.parse(snapshot);sharedConflict=false;
@@ -686,6 +841,21 @@ function editableTextWithoutControls(el){if(el.matches('textarea,input'))return 
 $('pages').addEventListener('click',e=>{const remove=e.target.closest('[data-free-note-remove]');const restore=e.target.closest('[data-free-note-restore]');if(!remove&&!restore)return;e.preventDefault();e.stopPropagation();const i=Number((remove||restore).dataset[remove?'freeNoteRemove':'freeNoteRestore']),d=state.ideas[i];if(!d)return;if(remove&&!confirm('この文章枠を非表示にしますか？文章は保持され、後から復元できます。'))return;d.freeNoteHidden=!!remove;save();renderPages();});
 $('pages').addEventListener('click',e=>{const btn=e.target.closest('[data-free-note-edit]');if(!btn)return;e.preventDefault();e.stopPropagation();const i=Number(btn.dataset.freeNoteEdit),d=state.ideas[i];if(!d)return;const backdrop=document.createElement('div');backdrop.className='free-note-modal-backdrop';const panel=document.createElement('div');panel.className='free-note-modal-panel';const heading=document.createElement('h3');heading.textContent='下部の自由記入欄を編集';const input=document.createElement('textarea');input.value=d.freeNote||'';input.placeholder='文章を入力してください';const actions=document.createElement('div');actions.className='free-note-modal-actions';const close=document.createElement('button');close.textContent='閉じる';const done=document.createElement('button');done.textContent='保存して閉じる';const sync=()=>{d.freeNote=input.value;save();const live=$('pages').querySelector('[data-idea-index="'+i+'"] .free-note-input');if(live)live.value=input.value;};input.addEventListener('input',sync);close.onclick=()=>{sync();backdrop.remove();renderPages()};done.onclick=close.onclick;actions.append(close,done);panel.append(heading,input,actions);backdrop.append(panel);document.body.append(backdrop);input.focus();});
 $('pages').addEventListener('input',e=>{const el=e.target;if(!el.matches('.free-note-input'))return;const page=el.closest('[data-idea-index]');const d=page&&state.ideas[Number(page.dataset.ideaIndex)];if(!d)return;d.freeNote=el.value;save();});
+// Preview safety: capture every keystroke before blur. Otherwise a remote refresh
+// can replace an in-progress contenteditable field before its focusout save.
+$('pages').addEventListener('input',e=>{
+ const el=e.target.closest('[data-edit-field]');
+ if(!el)return;
+ const page=el.closest('[data-idea-index]');
+ if(!page)return;
+ const i=Number(page.dataset.ideaIndex),field=el.dataset.editField,d=state.ideas[i];
+ if(!d||!['title','members','content','shoot','aim','sound','part','location','extra','freeNote'].includes(field))return;
+ let value=editableTextWithoutControls(el);
+ if(field==='title'&&value==='企画タイトル未入力')value='';
+ if(d[field]===value)return;
+ d[field]=value;
+ save(); // marks sharedDirty synchronously; schedules cloud save without rerendering the editor
+});
 $('pages').addEventListener('focusout',e=>{const el=e.target.closest('[data-edit-field]');if(!el)return;const page=el.closest('[data-idea-index]');if(!page)return;const i=Number(page.dataset.ideaIndex),field=el.dataset.editField,d=state.ideas[i];if(!d||!['title','members','content','shoot','aim','sound','part','location','extra','freeNote'].includes(field))return;let value=editableTextWithoutControls(el);if(field==='title'&&value==='企画タイトル未入力')value='';d[field]=value;state.selected=i;save();renderList();renderPages();if(!$('edit-view').classList.contains('hidden'))fieldEditor();});
 $('pages').addEventListener('keydown',e=>{if(e.target.matches('[data-edit-field="title"]')&&e.key==='Enter'){e.preventDefault();e.target.blur();}});
 function moveIdea(delta){const i=state.pageOrder.findIndex(p=>p.kind==='idea'&&p.index===state.selected);if(i>=0)movePage(i,delta)}
@@ -1330,4 +1500,102 @@ body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px
  if(editable){$r('studio-review-add').onclick=()=>add();$r('studio-review-save').onclick=async()=>{const notes=[...list.children].map(row=>({page:Number(row.querySelector('input').value),text:row.querySelector('textarea').value.trim()}));if(!notes.length||notes.some(n=>!n.text||!Number.isInteger(n.page)||n.page<1||n.page>500)){alert('対象ページと指摘内容を入力してください');return}if(!confirm('指摘を保存して差し戻しますか？'))return;const res=await fetch('/api/shared-docs/'+id+'/workflow',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'reject',notes})});const result=await res.json();if(!res.ok){alert(result.error||'保存できませんでした');return}location.href='/' }}
  const wait=()=>{const pages=document.querySelectorAll('#pages .page');if(!pages.length){setTimeout(wait,300);return}pages.forEach((page,i)=>{page.setAttribute('data-review-page',i+1);page.title='PDFページ '+(i+1)});$r('studio-review-message').textContent=doc.name+' ／ '+pages.length+'ページ（PDF出力と同じレイアウト）'};wait();
 })();
-</script><style>.studio-doc-type{font-size:11px;color:#586b85;background:#edf1f7;padding:3px 7px;border-radius:5px}.studio-metadata-dialog{border:1px solid #dce5ef;border-radius:14px;padding:0;max-width:min(520px,94vw);width:100%;box-shadow:0 16px 60px #172a4733}.studio-metadata-dialog::backdrop{background:#10233a88}.studio-metadata-form{padding:24px;display:grid;gap:15px}.studio-metadata-form label{display:grid;gap:6px;font-weight:600}.studio-metadata-form input,.studio-metadata-form select{padding:11px;border:1px solid #cdd8e7;border-radius:8px;width:100%;box-sizing:border-box}</style><style>.studio-home-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}.studio-home-actions button{background:#243f71;color:white;border:0;border-radius:9px;padding:13px 20px;font-weight:700;cursor:pointer}.studio-home-actions span{color:#657690;font-size:13px}.studio-client-card.studio-priority-warning{border-left:5px solid #d18b20!important}.studio-client-card.studio-priority-warning .studio-priority-label{color:#a7670b!important}</style><style>.studio-client-card.studio-priority-unscheduled{border-left:5px solid #d38a24!important;background:#fffaf2}.studio-client-card.studio-priority-unscheduled .studio-priority-label{color:#a35f08!important;font-weight:800!important;font-size:16px!important}.studio-client-card .studio-priority-label{font-weight:800!important;font-size:16px!important}.studio-card-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;width:100%}.studio-card-actions button{border:0;border-radius:7px;background:#233f70;color:white;padding:9px 11px;font-size:12px;font-weight:700;cursor:pointer}.studio-card-actions .studio-card-library{background:#eaf0f8;color:#243f70}.studio-client-card{min-height:205px}</style><style>.studio-week-completion{display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding:16px 20px;background:#fff;border:1px solid #d9e2ef;border-radius:12px;margin:14px 0}.studio-week-completion strong{font-size:18px;color:#243f70}.studio-week-completion small{width:100%;color:#697b95}</style><style>.studio-week-completion{display:grid!important;grid-template-columns:1fr 1fr 1.5fr;gap:12px!important;align-items:center!important;padding:20px!important}.studio-week-incomplete{background:#fff5f3!important;border:2px solid #e09a91!important}.studio-week-done{background:#f1faf5!important;border:2px solid #8ec6a6!important}.studio-week-metric{display:flex;flex-direction:column;gap:4px}.studio-week-metric span{font-size:13px;color:#59677b}.studio-week-metric strong{font-size:30px!important;color:#172b4c}.studio-week-alert{display:flex;flex-direction:column;gap:5px;color:#ac3030}.studio-week-alert b{font-size:21px}.studio-week-alert span{font-size:13px}.studio-week-bar{grid-column:1/-1;height:10px;background:#efd2ce;border-radius:10px;overflow:hidden}.studio-week-bar div{height:100%;background:#388d68}.studio-week-completion small{grid-column:1/-1;width:auto!important;font-weight:600;color:#ad493b!important}@media(max-width:700px){.studio-week-completion{grid-template-columns:1fr 1fr}.studio-week-alert{grid-column:1/-1}}</style></body></html>
+</script><style>.studio-doc-type{font-size:11px;color:#586b85;background:#edf1f7;padding:3px 7px;border-radius:5px}.studio-metadata-dialog{border:1px solid #dce5ef;border-radius:14px;padding:0;max-width:min(520px,94vw);width:100%;box-shadow:0 16px 60px #172a4733}.studio-metadata-dialog::backdrop{background:#10233a88}.studio-metadata-form{padding:24px;display:grid;gap:15px}.studio-metadata-form label{display:grid;gap:6px;font-weight:600}.studio-metadata-form input,.studio-metadata-form select{padding:11px;border:1px solid #cdd8e7;border-radius:8px;width:100%;box-sizing:border-box}</style><style>.studio-home-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}.studio-home-actions button{background:#243f71;color:white;border:0;border-radius:9px;padding:13px 20px;font-weight:700;cursor:pointer}.studio-home-actions span{color:#657690;font-size:13px}.studio-client-card.studio-priority-warning{border-left:5px solid #d18b20!important}.studio-client-card.studio-priority-warning .studio-priority-label{color:#a7670b!important}</style><style>.studio-client-card.studio-priority-unscheduled{border-left:5px solid #d38a24!important;background:#fffaf2}.studio-client-card.studio-priority-unscheduled .studio-priority-label{color:#a35f08!important;font-weight:800!important;font-size:16px!important}.studio-client-card .studio-priority-label{font-weight:800!important;font-size:16px!important}.studio-card-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;width:100%}.studio-card-actions button{border:0;border-radius:7px;background:#233f70;color:white;padding:9px 11px;font-size:12px;font-weight:700;cursor:pointer}.studio-card-actions .studio-card-library{background:#eaf0f8;color:#243f70}.studio-client-card{min-height:205px}</style><style>.studio-week-completion{display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding:16px 20px;background:#fff;border:1px solid #d9e2ef;border-radius:12px;margin:14px 0}.studio-week-completion strong{font-size:18px;color:#243f70}.studio-week-completion small{width:100%;color:#697b95}</style><style>.studio-week-completion{display:grid!important;grid-template-columns:1fr 1fr 1.5fr;gap:12px!important;align-items:center!important;padding:20px!important}.studio-week-incomplete{background:#fff5f3!important;border:2px solid #e09a91!important}.studio-week-done{background:#f1faf5!important;border:2px solid #8ec6a6!important}.studio-week-metric{display:flex;flex-direction:column;gap:4px}.studio-week-metric span{font-size:13px;color:#59677b}.studio-week-metric strong{font-size:30px!important;color:#172b4c}.studio-week-alert{display:flex;flex-direction:column;gap:5px;color:#ac3030}.studio-week-alert b{font-size:21px}.studio-week-alert span{font-size:13px}.studio-week-bar{grid-column:1/-1;height:10px;background:#efd2ce;border-radius:10px;overflow:hidden}.studio-week-bar div{height:100%;background:#388d68}.studio-week-completion small{grid-column:1/-1;width:auto!important;font-weight:600;color:#ad493b!important}@media(max-width:700px){.studio-week-completion{grid-template-columns:1fr 1fr}.studio-week-alert{grid-column:1/-1}}</style><script>
+/* Preview-only compact editor toolbar; existing controls and handlers are retained. */
+(function(){
+ const save=document.getElementById('manual-save'),refresh=document.getElementById('manual-refresh'),manage=document.getElementById('manage-pages'),pdf=document.getElementById('print');
+ if(!save||!refresh||!manage||!pdf)return;
+ const historyBtn=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='変更履歴'&&b.closest('#edit-view, #pages, .quickbar, body'));
+ const draft=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='未保存データを復元');
+ const approved=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='過去の承認済みPDFを出力');
+ const makeMenu=(label,items)=>{
+  const wrap=document.createElement('div');wrap.style.cssText='position:relative;display:inline-flex;align-items:center;flex-shrink:0';
+  const trigger=document.createElement('button');trigger.type='button';trigger.className='secondary';trigger.textContent=label+' ▾';trigger.setAttribute('aria-expanded','false');
+  const menu=document.createElement('div');menu.style.cssText='display:none;position:absolute;top:calc(100% + 7px);right:0;z-index:1000;background:white;border:1px solid #dce3ee;border-radius:10px;box-shadow:0 10px 25px #172b4b25;min-width:210px;padding:7px';
+  for(const item of items){if(!item)continue;item.style.cssText+=';display:block;width:100%;margin:2px 0;text-align:left;white-space:normal';menu.appendChild(item)}
+  trigger.onclick=()=>{const open=menu.style.display==='none';document.querySelectorAll('.preview-toolbar-menu').forEach(m=>m.style.display='none');menu.style.display=open?'block':'none';trigger.setAttribute('aria-expanded',String(open))};
+  menu.className='preview-toolbar-menu';wrap.append(trigger,menu);return wrap;
+ };
+ const editMenu=makeMenu('編集',[manage,historyBtn]);
+ const moreMenu=makeMenu('その他',[save,refresh,draft,approved]);
+ const bar=pdf.parentElement;
+ bar.insertBefore(editMenu,pdf);
+ bar.insertBefore(moreMenu,pdf);
+ const status=document.getElementById('manual-save-status');
+ if(status){status.style.cssText+=';max-width:200px;overflow:hidden;text-overflow:ellipsis';bar.insertBefore(status,pdf)}
+ document.addEventListener('click',e=>{if(!e.target.closest('.preview-toolbar-menu')&&!e.target.closest('button[aria-expanded]'))document.querySelectorAll('.preview-toolbar-menu').forEach(m=>m.style.display='none')});
+})();
+/* Preview-only remote revision sync. Never overwrite unsaved edits or focused inputs. */
+(function(){
+  let fetching=false;
+  async function poll(){
+    if(fetching||document.hidden||typeof sharedId==='undefined'||!sharedId||sharedDirty||sharedConflict||sharedBusy||sharedLoading)return;
+    const focused=document.activeElement;
+    if(focused&&(focused.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(focused.tagName)))return;
+    fetching=true;
+    const id=sharedId, rev=sharedRev;
+    try{
+      const latest=await sharedAPI('/'+id);
+      if(id!==sharedId||sharedDirty||sharedConflict||sharedBusy||sharedLoading)return;
+      if(latest.revision<=sharedRev)return;
+      // A local edit may still be in the editor's DOM before the blur event
+      // commits it to state. Never replace the editor while it has focus.
+      if(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('#pages'))return;
+      // Preserve this browser's navigation position; selected page is not a shared cursor.
+      const localSelected=state.selected,localPage=state.selectedPage;
+      const next=structuredClone(latest.data);
+      next.selected=localSelected;next.selectedPage=localPage;
+      sharedLoading=true;
+      try{
+        state=next;
+        sharedRev=latest.revision;
+        sharedBase=structuredClone(latest.data);
+        sharedDirty=false;
+        refresh();
+        sharedStatus('他の参加者の変更を反映しました / 更新 '+sharedRev);
+      }finally{sharedLoading=false}
+    }catch(err){console.warn('Preview remote sync unavailable:',err)}
+    finally{fetching=false}
+  }
+  setInterval(poll,2500);
+})();
+/* Preview-only presence display. Does not modify editor state or autosave. */
+(function(){
+  const docId=()=>new URLSearchParams(location.search).get('doc');
+  const clientId=(()=>{let v=sessionStorage.getItem('studio-preview-client-id');if(!v){v=crypto.randomUUID().replace(/-/g,'');sessionStorage.setItem('studio-preview-client-id',v)}return v})();
+  let name=sessionStorage.getItem('studio-preview-name')||'';
+  const panel=document.createElement('div');
+  panel.id='studio-preview-presence';
+  panel.style.cssText='position:relative;display:inline-flex;align-items:center;flex-shrink:0;z-index:900;font:12px system-ui;color:#243f71';
+  const trigger=document.createElement('button');
+  trigger.type='button';trigger.title='共同編集者を表示';trigger.setAttribute('aria-expanded','false');
+  trigger.style.cssText='display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;background:#eaf0fa;border:1px solid #d3deef;color:#243f71;font:600 12px system-ui;box-shadow:0 1px 5px #152b4a10';
+  const icon=document.createElement('span');icon.textContent='●';icon.style.color='#32a477';
+  const summary=document.createElement('span');summary.textContent='共同編集';
+  trigger.append(icon,summary);
+  const dropdown=document.createElement('div');
+  dropdown.style.cssText='display:none;position:absolute;top:calc(100% + 8px);right:0;width:260px;max-width:calc(100vw - 24px);background:white;border:1px solid #dce3ef;box-shadow:0 8px 26px #152b4a25;border-radius:12px;padding:14px';
+  const title=document.createElement('div');title.textContent='共同編集しているメンバー';title.style.cssText='font-weight:700;margin-bottom:8px';
+  const users=document.createElement('div');users.id='studio-preview-presence-users';users.textContent='資料を開くと表示されます';
+  const change=document.createElement('button');change.type='button';change.textContent='表示名を変更';change.style.cssText='margin-top:10px;padding:6px 10px;border-radius:6px;border:1px solid #bbc8dc;background:#f4f7fc;color:#243f71;font-size:12px';
+  dropdown.append(title,users,change);panel.append(trigger,dropdown);const toolbar=document.getElementById('print')?.parentElement;if(toolbar){toolbar.insertBefore(panel,document.getElementById('print'));}else{panel.style.cssText='position:fixed;right:16px;bottom:16px;z-index:900';document.body.appendChild(panel);}
+  trigger.onclick=()=>{const open=dropdown.style.display==='none';dropdown.style.display=open?'block':'none';trigger.setAttribute('aria-expanded',String(open))};
+  document.addEventListener('click',e=>{if(!panel.contains(e.target)){dropdown.style.display='none';trigger.setAttribute('aria-expanded','false')}});
+  change.onclick=askName;
+  function askName(){const next=prompt('テスト用の表示名（例：中島・中田・りこ）',name||'テスト担当');if(next&&next.trim()){name=next.trim().slice(0,32);sessionStorage.setItem('studio-preview-name',name);tick()}}
+  async function tick(){
+    const id=docId();if(!id||!/^[a-f0-9]{32}$/.test(id)){users.textContent='資料を開くと表示されます';summary.textContent='共同編集';return}
+    if(!name){users.textContent='表示名を設定してください';return}
+    try{
+      const page=String(document.querySelector('#page-counter')?.textContent||'');
+      const r=await fetch('/api/preview-presence/'+id,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId,name,page})});
+      if(!r.ok)throw Error('HTTP '+r.status);
+      const data=await r.json();users.replaceChildren();summary.textContent='共同編集 '+(data.users||[]).length+'人';
+      for(const u of data.users||[]){const line=document.createElement('div');line.textContent=(u.clientId===clientId?'● ':'○ ')+u.name+(u.clientId===clientId?'（自分）':'')+(u.page?' · '+u.page:'');line.style.margin='4px 0';users.appendChild(line)}
+    }catch(e){users.textContent='接続を確認中（資料の保存には影響しません）'}
+  }
+  if(!name)askName();
+  tick();setInterval(tick,10000);
+})();
+</script>
+</body></html>
