@@ -1594,7 +1594,8 @@ body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px
       for(const u of data.users||[]){const line=document.createElement('div');line.textContent=(u.clientId===clientId?'● ':'○ ')+u.name+(u.clientId===clientId?'（自分）':'')+(u.page?' · '+u.page:'');line.style.margin='4px 0';users.appendChild(line)}
     }catch(e){users.textContent='接続を確認中（資料の保存には影響しません）'}
   }
-  if(!name)askName();
+  // Presence is optional and must never request a test identity on production.
+  // A missing display name does not affect the authenticated Google session.
   tick();setInterval(tick,10000);
 })();
 </script>
