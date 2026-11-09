@@ -1291,11 +1291,16 @@ const fridayText=friday.toLocaleDateString('ja-JP',{month:'long',day:'numeric',w
 const deadline=new Date(friday.getFullYear(),friday.getMonth(),friday.getDate(),18,0,0);
 const deadlineCountdown=()=>{const ms=deadline-Date.now();return ms<=0?'提出期限を過ぎました':ms>=86400000?'あと '+Math.floor(ms/86400000)+'日 '+Math.floor((ms%86400000)/3600000)+'時間':'あと '+Math.ceil(ms/3600000)+'時間';};
 if(view==='home'){
- const production=docs.filter(isProduction).filter(d=>['CUTIE STREET','22/7','Ettone'].includes((d.client||'').replace(/様$/,'').trim()));
+ // Only the current delivery week contributes to this week's scorecard.
+ // Older approved documents remain accessible in the library and history.
+ const weekMonday=new Date(friday.getFullYear(),friday.getMonth(),friday.getDate()-4).toLocaleDateString('sv-SE');
+
+ const isThisWeek=d=>{const due=d.dueDate||'';return due>=weekMonday&&due<=weekKey};
+ const production=docs.filter(isProduction).filter(d=>['CUTIE STREET','22/7','Ettone'].includes((d.client||'').replace(/様$/,'').trim())).filter(isThisWeek);
  const active=production.filter(d=>!['承認済み','提出済み'].includes(status(d)));
  const operatingClients=['CUTIE STREET','22/7','Ettone'];
  const weekKey=friday.toLocaleDateString('sv-SE');
- const weeklyClients=operatingClients.filter(c=>production.some(d=>(d.client||'').replace(/様$/,'').trim()===c&&d.dueDate&&d.dueDate<=weekKey));
+ const weeklyClients=operatingClients.filter(c=>production.some(d=>(d.client||'').replace(/様$/,'').trim()===c));
  const completedClients=operatingClients.filter(c=>{const relevant=production.filter(d=>(d.client||'').replace(/様$/,'').trim()===c&&d.dueDate&&d.dueDate<=weekKey);return relevant.length>0&&relevant.every(d=>['承認済み','提出済み'].includes(status(d)))});
  const missingSchedule=operatingClients.filter(c=>!weeklyClients.includes(c));
  const remainingClients=operatingClients.length-completedClients.length;
@@ -1310,7 +1315,7 @@ if(view==='home'){
    '<h2 class="studio-section-heading">対応が必要な資料</h2><div class="studio-worklist">'+(upcoming.length?upcoming.map(d=>row(d,true)).join(''):'<div class="studio-empty">現在、未提出の資料はありません。</div>')+'</div>'+
  '<h2 class="studio-section-heading">最近の提出済み資料</h2><div class="studio-worklist">'+(production.filter(d=>status(d)==='提出済み').slice(0,5).map(d=>row(d,false)).join('')||'<div class="studio-empty">まだ提出済み資料はありません。</div>')+'</div>';
 }else if(view==='waiting'){
- const waitingDocs=docs.filter(d=>isProduction(d)&&status(d)==='承認待ち');
+ const friday=new Date();friday.setDate(friday.getDate()+(5-friday.getDay()+7)%7);const end=friday.toLocaleDateString('sv-SE');friday.setDate(friday.getDate()-4);const start=friday.toLocaleDateString('sv-SE');const waitingDocs=docs.filter(d=>isProduction(d)&&d.dueDate>=start&&d.dueDate<=end&&status(d)==='承認待ち');
  area.innerHTML='<div class="studio-folder-breadcrumb"><button type="button" id="studio-waiting-back">← ホームへ戻る</button></div><h2 class="studio-section-heading">承認待ちの資料 · '+waitingDocs.length+'件</h2><p class="studio-inline-status">最終承認が必要な資料をまとめて表示しています。</p><div class="studio-worklist">'+(waitingDocs.length?waitingDocs.map(d=>row(d,true)).join(''):'<div class="studio-empty">現在、承認待ちの資料はありません。</div>')+'</div>';
  $('studio-waiting-back').onclick=()=>{view='home';render()};
 }else if(view==='library'){
