@@ -306,6 +306,25 @@ function mergeDistinctPages(base,local,remote){
  merged.selected=local.selected;merged.selectedPage=local.selectedPage;
  return merged;
 }
+// Preview: automatically offer conflict resolution after autosave detects an overlap.
+// Never interrupt an actively edited field; leave manual recovery available on cancel.
+let autoConflictPromptPending=false,autoConflictPromptRunning=false;
+function scheduleAutoConflictPrompt(){
+ if(!sharedConflict||!sharedId||autoConflictPromptPending||autoConflictPromptRunning)return;
+ autoConflictPromptPending=true;
+ const attempt=async()=>{
+  if(!autoConflictPromptPending)return;
+  if(!sharedConflict||!sharedId){autoConflictPromptPending=false;return}
+  if(sharedBusy||sharedLoading||document.visibilityState!=='visible'||sharedIsEditing()){
+   setTimeout(attempt,700);return;
+  }
+  autoConflictPromptPending=false;autoConflictPromptRunning=true;
+  try{await resolveSharedConflict()}
+  catch(err){sharedStatus('競合の自動確認に失敗：'+err.message+'。保存ボタンから再試行できます')}
+  finally{autoConflictPromptRunning=false}
+ };
+ setTimeout(attempt,350);
+}
 let cloudAutoEnabled=false,cloudCreating=false;
 async function autoCreateShared(){
  if(sharedId||cloudCreating||!cloudAutoEnabled)return;
@@ -349,7 +368,7 @@ async function sharedSave(){if(!sharedId||sharedBusy||sharedConflict||!sharedDir
    sharedStatus('最新の保存内容を確認しました / 更新 '+sharedRev);
   }else{
    sharedConflict=true;
-   sharedStatus('同じ箇所が同時に変更されました。自動保存を停止し、このブラウザの内容を退避しました。［未保存データを復元］から確認してください。');
+   sharedStatus('同じ箇所が同時に変更されました。自動保存を停止し、このブラウザの内容を退避しました。［未保存データを復元］から確認してください。');scheduleAutoConflictPrompt();
   }
  }catch(fetchError){sharedConflict=true;sharedStatus('競合：編集内容をブラウザに退避しました。最新版を確認できませんでした')}
 }else sharedStatus('共有保存失敗：'+e.message)}finally{sharedBusy=false;if(sharedDirty&&!sharedConflict){clearTimeout(sharedTimer);sharedTimer=setTimeout(sharedSave,3000)}}}
