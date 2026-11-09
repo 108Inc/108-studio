@@ -376,8 +376,15 @@ async function previewResolveTextConflicts(base,local,remote){
  function walk(b,l,r,path){
   if(eq(l,b))return;
   if(eq(r,b)||eq(l,r)){set(path,l);return}
+  if(Array.isArray(b)&&Array.isArray(l)&&Array.isArray(r)&&b.length===l.length&&b.length===r.length){
+   for(let i=0;i<b.length;i++)walk(b[i],l[i],r[i],[...path,i]);
+   return;
+  }
   if(plain(b)&&plain(l)&&plain(r)){
-   for(const k of new Set([...Object.keys(b),...Object.keys(l),...Object.keys(r)]))walk(b[k],l[k],r[k],[...path,k]);
+   for(const k of new Set([...Object.keys(b),...Object.keys(l),...Object.keys(r)])){
+    if(path.length===0&&(k==='selected'||k==='selectedPage'))continue;
+    walk(b[k],l[k],r[k],[...path,k]);
+   }
    return;
   }
   conflicts.push({path,local:l,remote:r});
@@ -389,7 +396,7 @@ async function previewResolveTextConflicts(base,local,remote){
  if(!base||!local||!remote||!Array.isArray(base.ideas)||base.ideas.length!==local.ideas?.length||base.ideas.length!==remote.ideas?.length)return null;
  walk(base,local,remote,[]);
  if(!conflicts.length)return result;
- if(conflicts.some(c=>typeof c.local!=='string'||typeof c.remote!=='string'))return null;
+ if(conflicts.some(c=>typeof c.local!=='string'||typeof c.remote!=='string')){sharedStatus('文章以外の変更も競合しています。両方の内容を保護するため別資料として保存できます');return null;}
  return new Promise(resolve=>{
   const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:#122342a8;z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
   const box=document.createElement('div');box.style.cssText='background:white;color:#20365d;border-radius:14px;padding:22px;max-width:820px;width:100%;max-height:85vh;overflow:auto;font:14px system-ui';
