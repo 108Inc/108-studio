@@ -284,8 +284,20 @@ function mergeDistinctPages(base,local,remote){
  for(let i=0;i<base.ideas.length;i++){
   const changedLocal=!eq(base.ideas[i],local.ideas[i]);
   if(!changedLocal)continue;
-  if(!eq(base.ideas[i],remote.ideas[i])&&!eq(local.ideas[i],remote.ideas[i]))return null;
-  merged.ideas[i]=structuredClone(local.ideas[i]);
+  if(!eq(base.ideas[i],remote.ideas[i])&&!eq(local.ideas[i],remote.ideas[i])){
+   // On the same page, only merge independent top-level fields.
+   // Never guess when both editors changed the same field.
+   const b=base.ideas[i],l=local.ideas[i],r=remote.ideas[i];
+   if(!b||!l||!r||Array.isArray(b)||Array.isArray(l)||Array.isArray(r)||typeof b!=='object'||typeof l!=='object'||typeof r!=='object')return null;
+   const out=structuredClone(r);
+   for(const key of new Set([...Object.keys(b),...Object.keys(l),...Object.keys(r)])){
+    if(eq(b[key],l[key]))continue;
+    if(!eq(b[key],r[key])&&!eq(l[key],r[key]))return null;
+    if(Object.prototype.hasOwnProperty.call(l,key))out[key]=structuredClone(l[key]);
+    else delete out[key];
+   }
+   merged.ideas[i]=out;
+  }else merged.ideas[i]=structuredClone(local.ideas[i]);
  }
  merged.selected=local.selected;merged.selectedPage=local.selectedPage;
  return merged;
