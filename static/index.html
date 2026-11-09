@@ -1532,7 +1532,7 @@ body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px
   let name=sessionStorage.getItem('studio-preview-name')||'';
   const panel=document.createElement('div');
   panel.id='studio-preview-presence';
-  panel.style.cssText='position:fixed;top:36px;right:172px;z-index:900;font:12px system-ui;color:#243f71';
+  panel.style.cssText='position:relative;display:inline-flex;align-items:center;flex-shrink:0;z-index:900;font:12px system-ui;color:#243f71';
   const trigger=document.createElement('button');
   trigger.type='button';trigger.title='共同編集者を表示';trigger.setAttribute('aria-expanded','false');
   trigger.style.cssText='display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;background:#eaf0fa;border:1px solid #d3deef;color:#243f71;font:600 12px system-ui;box-shadow:0 1px 5px #152b4a10';
@@ -1544,7 +1544,7 @@ body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px
   const title=document.createElement('div');title.textContent='共同編集しているメンバー';title.style.cssText='font-weight:700;margin-bottom:8px';
   const users=document.createElement('div');users.id='studio-preview-presence-users';users.textContent='資料を開くと表示されます';
   const change=document.createElement('button');change.type='button';change.textContent='表示名を変更';change.style.cssText='margin-top:10px;padding:6px 10px;border-radius:6px;border:1px solid #bbc8dc;background:#f4f7fc;color:#243f71;font-size:12px';
-  dropdown.append(title,users,change);panel.append(trigger,dropdown);document.body.appendChild(panel);
+  dropdown.append(title,users,change);panel.append(trigger,dropdown);const toolbar=document.getElementById('print')?.parentElement;if(toolbar){toolbar.insertBefore(panel,document.getElementById('print'));}else{panel.style.cssText='position:fixed;right:16px;bottom:16px;z-index:900';document.body.appendChild(panel);}
   trigger.onclick=()=>{const open=dropdown.style.display==='none';dropdown.style.display=open?'block':'none';trigger.setAttribute('aria-expanded',String(open))};
   document.addEventListener('click',e=>{if(!panel.contains(e.target)){dropdown.style.display='none';trigger.setAttribute('aria-expanded','false')}});
   change.onclick=askName;
