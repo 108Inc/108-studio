@@ -822,6 +822,21 @@ function editableTextWithoutControls(el){if(el.matches('textarea,input'))return 
 $('pages').addEventListener('click',e=>{const remove=e.target.closest('[data-free-note-remove]');const restore=e.target.closest('[data-free-note-restore]');if(!remove&&!restore)return;e.preventDefault();e.stopPropagation();const i=Number((remove||restore).dataset[remove?'freeNoteRemove':'freeNoteRestore']),d=state.ideas[i];if(!d)return;if(remove&&!confirm('この文章枠を非表示にしますか？文章は保持され、後から復元できます。'))return;d.freeNoteHidden=!!remove;save();renderPages();});
 $('pages').addEventListener('click',e=>{const btn=e.target.closest('[data-free-note-edit]');if(!btn)return;e.preventDefault();e.stopPropagation();const i=Number(btn.dataset.freeNoteEdit),d=state.ideas[i];if(!d)return;const backdrop=document.createElement('div');backdrop.className='free-note-modal-backdrop';const panel=document.createElement('div');panel.className='free-note-modal-panel';const heading=document.createElement('h3');heading.textContent='下部の自由記入欄を編集';const input=document.createElement('textarea');input.value=d.freeNote||'';input.placeholder='文章を入力してください';const actions=document.createElement('div');actions.className='free-note-modal-actions';const close=document.createElement('button');close.textContent='閉じる';const done=document.createElement('button');done.textContent='保存して閉じる';const sync=()=>{d.freeNote=input.value;save();const live=$('pages').querySelector('[data-idea-index="'+i+'"] .free-note-input');if(live)live.value=input.value;};input.addEventListener('input',sync);close.onclick=()=>{sync();backdrop.remove();renderPages()};done.onclick=close.onclick;actions.append(close,done);panel.append(heading,input,actions);backdrop.append(panel);document.body.append(backdrop);input.focus();});
 $('pages').addEventListener('input',e=>{const el=e.target;if(!el.matches('.free-note-input'))return;const page=el.closest('[data-idea-index]');const d=page&&state.ideas[Number(page.dataset.ideaIndex)];if(!d)return;d.freeNote=el.value;save();});
+// Preview safety: capture every keystroke before blur. Otherwise a remote refresh
+// can replace an in-progress contenteditable field before its focusout save.
+$('pages').addEventListener('input',e=>{
+ const el=e.target.closest('[data-edit-field]');
+ if(!el)return;
+ const page=el.closest('[data-idea-index]');
+ if(!page)return;
+ const i=Number(page.dataset.ideaIndex),field=el.dataset.editField,d=state.ideas[i];
+ if(!d||!['title','members','content','shoot','aim','sound','part','location','extra','freeNote'].includes(field))return;
+ let value=editableTextWithoutControls(el);
+ if(field==='title'&&value==='企画タイトル未入力')value='';
+ if(d[field]===value)return;
+ d[field]=value;
+ save(); // marks sharedDirty synchronously; schedules cloud save without rerendering the editor
+});
 $('pages').addEventListener('focusout',e=>{const el=e.target.closest('[data-edit-field]');if(!el)return;const page=el.closest('[data-idea-index]');if(!page)return;const i=Number(page.dataset.ideaIndex),field=el.dataset.editField,d=state.ideas[i];if(!d||!['title','members','content','shoot','aim','sound','part','location','extra','freeNote'].includes(field))return;let value=editableTextWithoutControls(el);if(field==='title'&&value==='企画タイトル未入力')value='';d[field]=value;state.selected=i;save();renderList();renderPages();if(!$('edit-view').classList.contains('hidden'))fieldEditor();});
 $('pages').addEventListener('keydown',e=>{if(e.target.matches('[data-edit-field="title"]')&&e.key==='Enter'){e.preventDefault();e.target.blur();}});
 function moveIdea(delta){const i=state.pageOrder.findIndex(p=>p.kind==='idea'&&p.index===state.selected);if(i>=0)movePage(i,delta)}
