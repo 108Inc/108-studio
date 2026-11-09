@@ -353,6 +353,19 @@ async function sharedSave(){if(!sharedId||sharedBusy||sharedConflict||!sharedDir
   }
  }catch(fetchError){sharedConflict=true;sharedStatus('競合：編集内容をブラウザに退避しました。最新版を確認できませんでした')}
 }else sharedStatus('共有保存失敗：'+e.message)}finally{sharedBusy=false;if(sharedDirty&&!sharedConflict){clearTimeout(sharedTimer);sharedTimer=setTimeout(sharedSave,3000)}}}
+// Preview-only conflict recovery control: never discard either editor's text.
+(function(){
+ const panel=document.createElement('div');
+ panel.id='preview-conflict-recovery';
+ panel.style.cssText='display:none;position:fixed;left:16px;bottom:16px;z-index:950;max-width:340px;padding:14px;background:#fff5f2;color:#782c22;border:1px solid #e5a79a;border-radius:12px;box-shadow:0 6px 24px #0002;font:13px system-ui';
+ const title=document.createElement('strong');title.textContent='同じ文章欄の編集が重なりました';
+ const desc=document.createElement('p');desc.textContent='この画面の文章は保持しています。別の資料として保存すると、両方の編集を残せます。';
+ const button=document.createElement('button');button.type='button';button.textContent='自分の編集を別資料に保存';button.style.cssText='padding:8px 10px;border-radius:7px;background:#782c22;color:white;border:0;cursor:pointer';
+ button.onclick=async()=>{button.disabled=true;try{await manualSave()}finally{button.disabled=false;render()}};
+ panel.append(title,desc,button);document.body.appendChild(panel);
+ function render(){panel.style.display=sharedConflict&&sharedId?'block':'none'}
+ setInterval(render,500);render();
+})();
 $('shared-create').onclick=async()=>{const name=prompt('共有資料名',state.client+' SNS撮影企画案');if(!name)return;try{const d=await sharedAPI('',{name,data:state});sharedId=d.id;sharedRev=d.revision;sharedBase=structuredClone(state);sharedDirty=false;sharedConflict=false;history.replaceState(null,'',location.pathname+'?doc='+sharedId);await sharedList();sharedStatus('共有開始：このページのURLを社内に送ってください')}catch(e){sharedStatus('作成失敗：'+e.message)}};
 const restoreDraftButton=document.createElement('button');restoreDraftButton.type='button';restoreDraftButton.className='secondary';restoreDraftButton.textContent='未保存データを復元';restoreDraftButton.title='このブラウザに残った編集内容を確認・復元します';restoreDraftButton.onclick=async()=>{const id=sharedId||new URLSearchParams(location.search).get('doc');if(!id){alert('先に対象の共有資料を開いてください');return}let draft;try{const raw=localStorage.getItem('108-studio-draft-'+id)||localStorage.getItem('108-studio-conflict-'+id);if(raw)draft=JSON.parse(raw)}catch(e){alert('退避データを読み取れません：'+e.message);return}if(!draft?.data){alert('このブラウザに退避されたデータがありません');return}if(!confirm('退避データ（'+(draft.savedAt||'保存日時不明')+'）を編集画面に復元しますか？クラウドの最新版は上書きせず、復元後に保存状態を確認します。'))return;state=structuredClone(draft.data);sharedDirty=true;sharedConflict=true;renderPages();refresh();sharedStatus('退避データを復元しました。クラウドには未保存です。');alert('編集内容を復元しました。競合が残っているため自動保存は停止中です。内容を確認し、必要なら新しい共有資料として保存してください。')};$('manual-save').insertAdjacentElement('afterend',restoreDraftButton);
 $('shared-open').onclick=async()=>{try{await sharedOpen($('shared-select').value)}catch(e){sharedStatus(e.message)}};
@@ -369,7 +382,7 @@ async function resolveSharedConflict(){
   sharedStatus('別ページの変更を統合して保存しました');return true;
  }
  // Same-page conflict: never overwrite remote changes. Preserve all local work as a separate shared document.
- if(!confirm('同じページに別の変更があります。元の共有資料を上書きせず、現在の編集内容を「競合復旧版」として新しい共有資料に保存しますか？'))return false;
+ if(!confirm('同じ文章欄が同時に編集されました。両方の内容を守るため、あなたの編集を「競合復旧版」として別資料に保存します。元の共有資料は変更しません。続けますか？'))return false;
  const originalName=sharedDocuments.find(d=>d.id===originalId)?.name||state.client||'資料';
  const copy=await sharedAPI('',{name:originalName+'（競合復旧版 '+new Date().toLocaleString('ja-JP')+'）',data:JSON.parse(snapshot)});
  sharedId=copy.id;sharedRev=copy.revision;sharedBase=JSON.parse(snapshot);sharedConflict=false;
