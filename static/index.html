@@ -1563,7 +1563,13 @@ body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px
 (function(){
   const docId=()=>new URLSearchParams(location.search).get('doc');
   const clientId=(()=>{let v=sessionStorage.getItem('studio-preview-client-id');if(!v){v=crypto.randomUUID().replace(/-/g,'');sessionStorage.setItem('studio-preview-client-id',v)}return v})();
-  let name=sessionStorage.getItem('studio-preview-name')||'';
+  // Presence identity is derived from the authenticated Google session, not a prompt.
+  let name='';
+  const presenceNames={'r.nakajima@108-inc.net':'中島'};
+  const identityReady=fetch('/api/me',{credentials:'include',cache:'no-store'})
+    .then(r=>{if(!r.ok)throw Error('ログインが必要です');return r.json()})
+    .then(me=>{const email=String(me.email||'').toLowerCase();if(!email)throw Error('ログインが必要です');name=presenceNames[email]||email.split('@')[0];return name})
+    .catch(()=>{name='';return ''});
   const panel=document.createElement('div');
   panel.id='studio-preview-presence';
   panel.style.cssText='position:relative;display:inline-flex;align-items:center;flex-shrink:0;z-index:900;font:12px system-ui;color:#243f71';
@@ -1581,8 +1587,7 @@ body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px
   dropdown.append(title,users,change);panel.append(trigger,dropdown);const toolbar=document.getElementById('print')?.parentElement;if(toolbar){toolbar.insertBefore(panel,document.getElementById('print'));}else{panel.style.cssText='position:fixed;right:16px;bottom:16px;z-index:900';document.body.appendChild(panel);}
   trigger.onclick=()=>{const open=dropdown.style.display==='none';dropdown.style.display=open?'block':'none';trigger.setAttribute('aria-expanded',String(open))};
   document.addEventListener('click',e=>{if(!panel.contains(e.target)){dropdown.style.display='none';trigger.setAttribute('aria-expanded','false')}});
-  change.onclick=askName;
-  function askName(){const next=prompt('テスト用の表示名（例：中島・中田・りこ）',name||'テスト担当');if(next&&next.trim()){name=next.trim().slice(0,32);sessionStorage.setItem('studio-preview-name',name);tick()}}
+  change.remove(); // Identity is controlled by the authenticated account.
   async function tick(){
     const id=docId();if(!id||!/^[a-f0-9]{32}$/.test(id)){users.textContent='資料を開くと表示されます';summary.textContent='共同編集';return}
     if(!name){users.textContent='表示名を設定してください';return}
@@ -1596,7 +1601,7 @@ body:not(.studio-editor-view) .studio-inline-status{color:#7a899e;font-size:12px
   }
   // Presence is optional and must never request a test identity on production.
   // A missing display name does not affect the authenticated Google session.
-  tick();setInterval(tick,10000);
+  identityReady.then(tick);setInterval(tick,10000);
 })();
 </script>
 </body></html>
