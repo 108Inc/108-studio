@@ -112,7 +112,8 @@ def workflow_action(doc_id, action, user, body):
             conn.execute("UPDATE studio_shared_docs SET workflow_status='承認待ち' WHERE id=%s",(doc_id,))
         elif action=='approve':
             if user!=APPROVER_EMAIL:return {'error':'中島のGoogleアカウントのみ承認できます'},403
-            if status!='承認待ち':return {'error':'承認待ちではありません'},409
+            if status=='提出済み':return {'error':'提出済みの資料です'},409
+            if status=='承認済み' and approved==revision:return {'error':'この版は承認済みです'},409
             conn.execute("UPDATE studio_shared_docs SET workflow_status='承認済み',approved_revision=revision,approved_by=%s,approved_at=NOW() WHERE id=%s",(user,doc_id))
         elif action=='reject':
             if user!=APPROVER_EMAIL:return {'error':'中島のGoogleアカウントのみ差し戻せます'},403
