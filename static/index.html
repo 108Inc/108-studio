@@ -272,32 +272,36 @@ const specs=[['title','企画名','text'],['category','企画カテゴリ','sele
 function save(){try{const snapshot=JSON.stringify(state);localStorage.setItem(KEY,snapshot);if(sharedId&&snapshot.length<1200000)localStorage.setItem('108-studio-draft-'+sharedId,JSON.stringify({savedAt:new Date().toISOString(),revision:sharedRev,data:state}))}catch(e){console.warn(e)}if(!sharedLoading){if(sharedId){sharedDirty=true;if(!sharedConflict){clearTimeout(sharedTimer);sharedTimer=setTimeout(sharedSave,1300)}else sharedStatus('競合中：編集内容はこのブラウザに退避済み。クラウド未保存')}else if(cloudAutoEnabled){clearTimeout(sharedTimer);sharedTimer=setTimeout(autoCreateShared,1500)}}return true}let sharedId='',sharedRev=0,sharedLoading=false,sharedConflict=false,sharedDirty=false,sharedTimer=null,sharedBusy=false;
 let sharedBase=null;
 function mergeDistinctPages(base,local,remote){
- if(!base||!Array.isArray(base.ideas)||!Array.isArray(local.ideas)||!Array.isArray(remote.ideas))return null;
+ // Conservative recursive three-way merge. Independent text boxes can live
+ // inside nested page objects; arrays and overlapping edits stay atomic.
  const eq=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
- const merged=structuredClone(remote);
- // Never merge page additions, removals or reordered pages without review.
+ const plain=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+ const MISSING=Symbol('missing'),CONFLICT=Symbol('conflict');
+ function merge(b,l,r,depth=0){
+  if(eq(l,b))return r===MISSING?MISSING:structuredClone(r);
+  if(eq(r,b)||eq(l,r))return l===MISSING?MISSING:structuredClone(l);
+  if(depth>16||!plain(b)||!plain(l)||!plain(r))return CONFLICT;
+  const out={};
+  for(const key of new Set([...Object.keys(b),...Object.keys(l),...Object.keys(r)])){
+   const val=merge(Object.hasOwn(b,key)?b[key]:MISSING,Object.hasOwn(l,key)?l[key]:MISSING,Object.hasOwn(r,key)?r[key]:MISSING,depth+1);
+   if(val===CONFLICT)return CONFLICT;
+   if(val!==MISSING)out[key]=val;
+  }
+  return out;
+ }
+ if(!base||!local||!remote||!Array.isArray(base.ideas)||!Array.isArray(local.ideas)||!Array.isArray(remote.ideas))return null;
  if(base.ideas.length!==local.ideas.length||base.ideas.length!==remote.ideas.length)return null;
- for(const key of new Set([...Object.keys(base),...Object.keys(local)])){
+ const merged=structuredClone(remote);
+ for(const key of new Set([...Object.keys(base),...Object.keys(local),...Object.keys(remote)])){
   if(key==='ideas'||key==='selected'||key==='selectedPage')continue;
-  if(!eq(base[key],local[key])){if(!eq(base[key],remote[key])&&!eq(local[key],remote[key]))return null;merged[key]=local[key]===undefined?undefined:structuredClone(local[key])}
+  const val=merge(Object.hasOwn(base,key)?base[key]:MISSING,Object.hasOwn(local,key)?local[key]:MISSING,Object.hasOwn(remote,key)?remote[key]:MISSING);
+  if(val===CONFLICT)return null;
+  if(val===MISSING)delete merged[key];else merged[key]=val;
  }
  for(let i=0;i<base.ideas.length;i++){
-  const changedLocal=!eq(base.ideas[i],local.ideas[i]);
-  if(!changedLocal)continue;
-  if(!eq(base.ideas[i],remote.ideas[i])&&!eq(local.ideas[i],remote.ideas[i])){
-   // On the same page, only merge independent top-level fields.
-   // Never guess when both editors changed the same field.
-   const b=base.ideas[i],l=local.ideas[i],r=remote.ideas[i];
-   if(!b||!l||!r||Array.isArray(b)||Array.isArray(l)||Array.isArray(r)||typeof b!=='object'||typeof l!=='object'||typeof r!=='object')return null;
-   const out=structuredClone(r);
-   for(const key of new Set([...Object.keys(b),...Object.keys(l),...Object.keys(r)])){
-    if(eq(b[key],l[key]))continue;
-    if(!eq(b[key],r[key])&&!eq(l[key],r[key]))return null;
-    if(Object.prototype.hasOwnProperty.call(l,key))out[key]=structuredClone(l[key]);
-    else delete out[key];
-   }
-   merged.ideas[i]=out;
-  }else merged.ideas[i]=structuredClone(local.ideas[i]);
+  const val=merge(base.ideas[i],local.ideas[i],remote.ideas[i]);
+  if(val===CONFLICT)return null;
+  merged.ideas[i]=val;
  }
  merged.selected=local.selected;merged.selectedPage=local.selectedPage;
  return merged;
@@ -339,7 +343,7 @@ async function sharedSave(){if(!sharedId||sharedBusy||sharedConflict||!sharedDir
    const updated=await sharedAPI('/'+sharedId,{revision:latest.revision,data:merged});
    sharedRev=updated.revision;sharedBase=structuredClone(merged);
    if(JSON.stringify(state)===snapshot){state=merged;sharedDirty=false;renderPages()}else{sharedDirty=true}
-   sharedConflict=false;sharedStatus('別ページの変更を統合して保存しました / 更新 '+sharedRev);
+   sharedConflict=false;sharedStatus('別々の編集欄の変更を統合して保存しました / 更新 '+sharedRev);
   }else if(JSON.stringify(latest.data)===snapshot){
    sharedRev=latest.revision;sharedBase=structuredClone(latest.data);sharedDirty=JSON.stringify(state)!==snapshot;sharedConflict=false;
    sharedStatus('最新の保存内容を確認しました / 更新 '+sharedRev);
