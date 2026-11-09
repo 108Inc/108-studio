@@ -446,18 +446,6 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as exc:
                 print('Dojo integration error:',type(exc).__name__,str(exc)[:200],flush=True)
                 return self.send_json({'error':'108道場から企画を取得できませんでした'},502)
-        if os.getenv('STUDIO_PREVIEW_NO_LOGIN') == 'yes' and re.fullmatch(r'/api/preview-presence/[a-f0-9]{32}',path):
-            if not current_user(self.headers.get('Cookie','')):return self.send_json({'error':'unauthorized'},401)
-            origin=self.headers.get('Origin','');host=self.headers.get('Host','')
-            if origin and origin not in ('https://'+host,'http://'+host,'http://localhost:'+str(PORT)):return self.send_json({'error':'origin mismatch'},403)
-            try:
-                length=int(self.headers.get('Content-Length','0'))
-                if not 0<length<=1024:return self.send_json({'error':'invalid size'},422)
-                body=json.loads(self.rfile.read(length))
-                cid=body.get('clientId');name=body.get('name');page=body.get('page','')
-                if not isinstance(cid,str) or not re.fullmatch(r'[a-f0-9]{32}',cid) or not isinstance(name,str) or not name.strip():return self.send_json({'error':'invalid user'},422)
-                return self.send_json({'users':preview_presence(path.rsplit('/',1)[-1],cid,name.strip(),page)})
-            except (ValueError,TypeError):return self.send_json({'error':'invalid request'},422)
         if path == '/api/clients':
             try:return self.send_json({'clients':clients_list()})
             except Exception as e:return self.send_json({'error':'クライアント一覧を取得できませんでした'},503)
@@ -553,6 +541,18 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        if os.getenv('STUDIO_PREVIEW_NO_LOGIN') == 'yes' and re.fullmatch(r'/api/preview-presence/[a-f0-9]{32}',path):
+            if not current_user(self.headers.get('Cookie','')):return self.send_json({'error':'unauthorized'},401)
+            origin=self.headers.get('Origin','');host=self.headers.get('Host','')
+            if origin and origin not in ('https://'+host,'http://'+host,'http://localhost:'+str(PORT)):return self.send_json({'error':'origin mismatch'},403)
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if not 0<length<=1024:return self.send_json({'error':'invalid size'},422)
+                body=json.loads(self.rfile.read(length))
+                cid=body.get('clientId');name=body.get('name');page=body.get('page','')
+                if not isinstance(cid,str) or not re.fullmatch(r'[a-f0-9]{32}',cid) or not isinstance(name,str) or not name.strip():return self.send_json({'error':'invalid user'},422)
+                return self.send_json({'users':preview_presence(path.rsplit('/',1)[-1],cid,name.strip(),page)})
+            except (ValueError,TypeError):return self.send_json({'error':'invalid request'},422)
         if path == '/api/clients':
             user=current_user(self.headers.get('Cookie',''))
             if not user:return self.send_json({'error':'ログインが必要です'},401)
