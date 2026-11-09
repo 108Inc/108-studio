@@ -423,6 +423,46 @@ async function previewResolveTextConflicts(base,local,remote){
   actions.append(cancel,apply);box.appendChild(actions);overlay.appendChild(box);document.body.appendChild(overlay);
  });
 }
+// Preview-only revision history. Restoring creates a NEW revision; history is preserved.
+async function previewShowRevisionHistory(){
+ if(!sharedId){alert('先に資料を開いてください');return}
+ if(sharedDirty||sharedConflict||sharedBusy){alert('未保存または競合中の変更があります。先に保存・解決してください');return}
+ const docId=sharedId;
+ const data=await sharedAPI('/'+docId+'/versions');
+ const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:#14213eaa;z-index:99998;display:flex;align-items:center;justify-content:center;padding:18px';
+ const panel=document.createElement('div');panel.style.cssText='background:white;color:#20365d;width:min(720px,100%);max-height:85vh;overflow:auto;border-radius:14px;padding:24px;font:14px system-ui';
+ const heading=document.createElement('h2');heading.textContent='変更履歴・復元';panel.appendChild(heading);
+ const help=document.createElement('p');help.textContent='過去の保存状態を確認できます。復元すると新しい版として保存され、現在の版も履歴に残ります。';panel.appendChild(help);
+ const close=document.createElement('button');close.textContent='閉じる';close.onclick=()=>overlay.remove();panel.appendChild(close);
+ for(const v of data.versions||[]){
+  const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:12px;justify-content:space-between;border-bottom:1px solid #e0e6f0;padding:12px 0';
+  const info=document.createElement('span');info.textContent='版 '+v.revision+' · '+new Date(v.updatedAt).toLocaleString('ja-JP')+' · '+v.updatedBy;
+  const restore=document.createElement('button');restore.textContent=v.revision===sharedRev?'現在の版':'この版を復元';restore.disabled=v.revision===sharedRev;
+  restore.onclick=async()=>{
+   if(sharedDirty||sharedConflict||sharedBusy||sharedId!==docId){alert('資料が変更されています。履歴画面を閉じて状態を確認してください');return}
+   if(!confirm('版 '+v.revision+' を新しい版として復元しますか？現在の内容も履歴に残ります。'))return;
+   restore.disabled=true;
+   try{
+    const historical=await sharedAPI('/'+docId+'/versions/'+v.revision);
+    const latest=await sharedAPI('/'+docId);
+    if(latest.revision!==sharedRev){alert('他の参加者が更新しました。画面を閉じて最新状態を確認してください');return}
+    const saved=await sharedAPI('/'+docId,{revision:latest.revision,data:historical.data});
+    sharedLoading=true;
+    try{state=structuredClone(historical.data);sharedRev=saved.revision;sharedBase=structuredClone(historical.data);sharedDirty=false;sharedConflict=false;refresh();sharedStatus('版 '+v.revision+' を新しい版 '+saved.revision+' として復元しました')}finally{sharedLoading=false}
+    overlay.remove();
+   }catch(err){alert('復元に失敗しました：'+err.message)}
+   finally{restore.disabled=false}
+  };
+  row.append(info,restore);panel.appendChild(row);
+ }
+ if(!(data.versions||[]).length){const empty=document.createElement('p');empty.textContent='保存履歴はまだありません';panel.appendChild(empty)}
+ overlay.appendChild(panel);document.body.appendChild(overlay);
+}
+(function(){
+ const btn=document.createElement('button');btn.type='button';btn.textContent='変更履歴';btn.className='secondary';btn.title='過去の保存状態を確認・復元';
+ btn.onclick=()=>previewShowRevisionHistory().catch(e=>alert('変更履歴を取得できません：'+e.message));
+ const saveBtn=document.getElementById('manual-save');if(saveBtn)saveBtn.insertAdjacentElement('afterend',btn);
+})();
 async function resolveSharedConflict(){
  if(!sharedId)return false;
  const snapshot=JSON.stringify(state),originalId=sharedId;
