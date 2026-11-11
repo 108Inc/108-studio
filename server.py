@@ -397,7 +397,7 @@ class Handler(SimpleHTTPRequestHandler):
             if path in ('/', '/index.html'):
                 return self.send_bytes(LOGIN.replace('__CLIENT_ID__', json.dumps(CLIENT_ID)).encode())
             return self.send_json({'error': 'ログインが必要です'}, 401)
-        if os.getenv('STUDIO_PREVIEW_NO_LOGIN') == 'yes' and re.fullmatch(r'/api/preview-presence/[a-f0-9]{32}',path):
+        if re.fullmatch(r'/api/preview-presence/[a-f0-9]{32}',path):
             return self.send_json({'users':preview_presence(path.rsplit('/',1)[-1])})
         if path == '/api/dojo/feedback':
             url=os.getenv('DOJO_API_URL','').rstrip('/')
@@ -542,7 +542,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
-        if os.getenv('STUDIO_PREVIEW_NO_LOGIN') == 'yes' and re.fullmatch(r'/api/preview-presence/[a-f0-9]{32}',path):
+        if re.fullmatch(r'/api/preview-presence/[a-f0-9]{32}',path):
             if not current_user(self.headers.get('Cookie','')):return self.send_json({'error':'unauthorized'},401)
             origin=self.headers.get('Origin','');host=self.headers.get('Host','')
             if origin and origin not in ('https://'+host,'http://'+host,'http://localhost:'+str(PORT)):return self.send_json({'error':'origin mismatch'},403)
@@ -550,8 +550,8 @@ class Handler(SimpleHTTPRequestHandler):
                 length=int(self.headers.get('Content-Length','0'))
                 if not 0<length<=1024:return self.send_json({'error':'invalid size'},422)
                 body=json.loads(self.rfile.read(length))
-                cid=body.get('clientId');name=body.get('name');page=body.get('page','')
-                if not isinstance(cid,str) or not re.fullmatch(r'[a-f0-9]{32}',cid) or not isinstance(name,str) or not name.strip():return self.send_json({'error':'invalid user'},422)
+                cid=body.get('clientId');page=body.get('page','');user=current_user(self.headers.get('Cookie',''));name=('中島' if user=='r.nakajima@108-inc.net' else user.split('@')[0]) if user else ''
+                if not isinstance(cid,str) or not re.fullmatch(r'[a-f0-9]{32}',cid) or not name:return self.send_json({'error':'invalid user'},422)
                 return self.send_json({'users':preview_presence(path.rsplit('/',1)[-1],cid,name.strip(),page)})
             except (ValueError,TypeError):return self.send_json({'error':'invalid request'},422)
         if path == '/api/clients':
