@@ -202,7 +202,7 @@ def sign(value):
     return hmac.new(SECRET.encode(), value.encode(), hashlib.sha256).hexdigest()
 
 def encode_session(email):
-    payload = base64.urlsafe_b64encode(json.dumps({'email': email, 'exp': int(time.time()) + 28800}).encode()).decode().rstrip('=')
+    payload = base64.urlsafe_b64encode(json.dumps({'email': email, 'exp': int(time.time()) + 30 * 86400}).encode()).decode().rstrip('=')
     return payload + '.' + sign(payload)
 
 def current_user(cookie):
@@ -766,7 +766,7 @@ class Handler(SimpleHTTPRequestHandler):
             session = encode_session(email)
             result = b'{"ok":true}'
             self.send_response(200); self.send_header('Content-Type', 'application/json')
-            self.send_header('Set-Cookie', 'studio_session=' + session + '; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=28800')
+            self.send_header('Set-Cookie', 'studio_session=' + session + '; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000')
             self.send_header('Content-Length', str(len(result))); self.end_headers(); self.wfile.write(result)
         except Exception as e: self.send_json({'error': str(e)}, 403)
 
