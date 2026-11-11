@@ -369,7 +369,7 @@ async function sharedSave(){if(!sharedId||sharedBusy||sharedConflict||!sharedDir
    sharedStatus('最新の保存内容を確認しました / 更新 '+sharedRev);
   }else{
    sharedConflict=true;
-   sharedStatus('同じ文章の編集が重なりました。入力は続けられます。編集後に「両方の文章を比較して選ぶ」を押してください。');
+   sharedStatus('同じ文章の編集が重なりました。入力が一段落すると比較画面を自動表示します。');scheduleAutoConflictPrompt();
   }
  }catch(fetchError){sharedConflict=true;sharedStatus('競合：編集内容をブラウザに退避しました。最新版を確認できませんでした')}
 }else sharedStatus('共有保存失敗：'+e.message)}finally{sharedBusy=false;if(sharedDirty&&!sharedConflict){clearTimeout(sharedTimer);sharedTimer=setTimeout(sharedSave,3000)}}}
