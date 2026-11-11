@@ -211,8 +211,11 @@ def current_user(cookie):
         return 'preview@108-studio.test'
     if not configured(): return None
     try:
-        jar = http.cookies.SimpleCookie(); jar.load(cookie or '')
-        payload, signature = jar['studio_session'].value.rsplit('.', 1)
+        # Parse only our session cookie. Other malformed/legacy cookies must not
+        # invalidate an otherwise valid Google session.
+        match = re.search(r'(?:^|;\\s*)studio_session=([^;]+)', cookie or '')
+        if not match: return None
+        payload, signature = urllib.parse.unquote(match.group(1).strip()).rsplit('.', 1)
         if not hmac.compare_digest(sign(payload), signature): return None
         info = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
         email = info['email'].lower()
