@@ -21,14 +21,21 @@ def shared_db():
 # Preview-only ephemeral presence; never touches shared document data.
 _PRESENCE = {}
 _PRESENCE_LOCK = threading.Lock()
-def preview_presence(doc_id, client_id=None, name=None, page=None):
+def preview_presence(doc_id, client_id=None, name=None, page=None, field=None, release=False):
     now=time.time()
     with _PRESENCE_LOCK:
         for key, entry in list(_PRESENCE.items()):
             if now-entry['seen']>35: del _PRESENCE[key]
         if client_id and name:
-            _PRESENCE[(doc_id,client_id)]={'name':name[:32],'page':str(page)[:24], 'seen':now}
-        return [{'name':v['name'],'page':v['page'],'clientId':k[1]} for k,v in _PRESENCE.items() if k[0]==doc_id]
+            if release:
+                _PRESENCE.pop((doc_id,client_id),None)
+            else:
+                active=str(field or '')[:120]
+                if active:
+                    owner=next((v for k,v in _PRESENCE.items() if k[0]==doc_id and k[1]!=client_id and v.get('field')==active),None)
+                    if owner:return {'blocked':True,'owner':owner['name'],'users':[{'name':v['name'],'field':v.get('field','')} for k,v in _PRESENCE.items() if k[0]==doc_id]}
+                _PRESENCE[(doc_id,client_id)]={'name':name[:32],'page':str(page)[:24], 'field':active,'seen':now}
+        return [{'name':v['name'],'page':v['page'],'field':v.get('field',''),'clientId':k[1]} for k,v in _PRESENCE.items() if k[0]==doc_id]
 
 def shared_init(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS studio_shared_docs (
@@ -555,7 +562,8 @@ class Handler(SimpleHTTPRequestHandler):
                 body=json.loads(self.rfile.read(length))
                 cid=body.get('clientId');page=body.get('page','');user=current_user(self.headers.get('Cookie',''));name=('中島' if user=='r.nakajima@108-inc.net' else user.split('@')[0]) if user else ''
                 if not isinstance(cid,str) or not re.fullmatch(r'[a-f0-9]{32}',cid) or not name:return self.send_json({'error':'invalid user'},422)
-                return self.send_json({'users':preview_presence(path.rsplit('/',1)[-1],cid,name.strip(),page)})
+                result=preview_presence(path.rsplit('/',1)[-1],cid,name.strip(),page,body.get('field'),body.get('release') is True)
+                return self.send_json(result if isinstance(result,dict) else {'users':result})
             except (ValueError,TypeError):return self.send_json({'error':'invalid request'},422)
         if path == '/api/clients':
             user=current_user(self.headers.get('Cookie',''))
