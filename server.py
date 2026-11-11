@@ -213,7 +213,7 @@ def current_user(cookie):
     try:
         # Parse only our session cookie. Other malformed/legacy cookies must not
         # invalidate an otherwise valid Google session.
-        match = re.search(r'(?:^|;\\s*)studio_session=([^;]+)', cookie or '')
+        match = re.search(r'(?:^|;\s*)studio_session=([^;]+)', cookie or '')
         if not match: return None
         payload, signature = urllib.parse.unquote(match.group(1).strip()).rsplit('.', 1)
         if not hmac.compare_digest(sign(payload), signature): return None
