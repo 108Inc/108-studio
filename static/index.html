@@ -271,6 +271,43 @@ function renderPageList(){const root=$('page-list');root.replaceChildren();$('pa
 const specs=[['title','企画名','text'],['category','企画カテゴリ','select'],['url','参考動画URL','url'],['thumbnail','参考動画サムネイル（スクショ貼り付け／画像アップロード）','text'],['members','出演メンバー','textarea'],['sound','音源','text'],['part','使用箇所','text'],['location','場所／衣装','text'],['content','企画内容','textarea'],['shoot','撮影／演出イメージ（任意）','textarea'],['aim','狙い／意図','textarea'],['freeNote','ページ下部の自由記入欄（任意）','textarea'],['extra','補足ページの内容（任意）','textarea'],['twoPages','補足ページを追加','checkbox']];
 function save(){try{const snapshot=JSON.stringify(state);localStorage.setItem(KEY,snapshot);if(sharedId&&snapshot.length<1200000)localStorage.setItem('108-studio-draft-'+sharedId,JSON.stringify({savedAt:new Date().toISOString(),revision:sharedRev,data:state}))}catch(e){console.warn(e)}if(!sharedLoading){if(sharedId){sharedDirty=true;if(collaborationPaused){sharedStatus('共同編集停止中：クラウド未保存（ブラウザ退避済み）')}else if(!sharedConflict){clearTimeout(sharedTimer);sharedTimer=setTimeout(sharedSave,1300)}else sharedStatus('競合中：編集内容はこのブラウザに退避済み。クラウド未保存')}else if(cloudAutoEnabled){clearTimeout(sharedTimer);sharedTimer=setTimeout(autoCreateShared,1500)}}return true}let sharedId='',sharedRev=0,sharedLoading=false,sharedConflict=false,sharedDirty=false,sharedTimer=null,sharedBusy=false;
 let sharedBase=null;
+// Field-level editing claims: warn before a second editor types in the same box.
+const editClientId=(()=>{let id=sessionStorage.getItem('studio-edit-client');if(!id){id=Array.from(crypto.getRandomValues(new Uint8Array(16)),x=>x.toString(16).padStart(2,'0')).join('');sessionStorage.setItem('studio-edit-client',id)}return id})();
+let activeEditField='',fieldClaimBlocked=false;
+function editFieldKey(el){
+ const page=el.closest('[data-idea-index],[data-page-position]');
+ if(!page)return '';
+ const prefix=page.hasAttribute('data-idea-index')?'idea:'+page.dataset.ideaIndex:'page:'+page.dataset.pagePosition;
+ return prefix+':'+(el.dataset.editField||el.dataset.pageEdit||'');
+}
+async function claimEditField(field,release=false){
+ if(!sharedId)return {users:[]};
+ const res=await fetch('/api/preview-presence/'+sharedId,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:editClientId,field,page:field,release})});
+ if(!res.ok)throw Error('編集状態を確認できません');
+ return res.json();
+}
+document.addEventListener('focusin',async e=>{
+ const el=e.target.closest?.('[data-edit-field],[data-page-edit]');
+ if(!el||!sharedId||collaborationPaused)return;
+ const key=editFieldKey(el);if(!key)return;
+ fieldClaimBlocked=true;el.setAttribute('data-lock-check','true');
+ try{
+  const result=await claimEditField(key);
+  if(document.activeElement!==el)return;
+  if(result.blocked){
+   el.blur();alert((result.owner||'他のメンバー')+'さんがこの文章を編集中です。編集が終わってから再度お試しください。');
+  }else{activeEditField=key;fieldClaimBlocked=false;el.removeAttribute('data-lock-check')}
+ }catch(err){if(document.activeElement===el){el.blur();alert('共同編集の確認に失敗しました。上書き防止のため編集を中断しました。')}}
+ finally{el.removeAttribute('data-lock-check')}
+},true);
+document.addEventListener('beforeinput',e=>{if(fieldClaimBlocked&&e.target.closest?.('[data-edit-field],[data-page-edit]'))e.preventDefault()},true);
+document.addEventListener('focusout',e=>{
+ const el=e.target.closest?.('[data-edit-field],[data-page-edit]');if(!el)return;
+ const key=editFieldKey(el);
+ if(key&&key===activeEditField){activeEditField='';setTimeout(()=>claimEditField('',true).catch(()=>{}),300)}
+},true);
+setInterval(()=>{if(activeEditField&&sharedId&&!collaborationPaused)claimEditField(activeEditField).then(r=>{if(r.blocked){document.activeElement?.blur();alert('他のメンバーがこの文章の編集を開始しました。内容を確認してください。')}}).catch(()=>{})},10000);
+
 let collaborationPaused=false;
 function setCollaborationPaused(paused){
  collaborationPaused=paused;
