@@ -1237,7 +1237,11 @@ $('print').onclick=()=>downloadPdfDirect();refresh();
  const el=id=>document.getElementById(id);
  const modal=el('document-library'),list=el('document-library-list');
  function close(){modal.classList.add('hidden')}
- async function open(){modal.classList.remove('hidden');await sharedList();render()}
+ let libraryRefreshBusy=false;
+ async function refreshLibrary(){if(modal.classList.contains('hidden')||document.visibilityState!=='visible'||libraryRefreshBusy)return;libraryRefreshBusy=true;try{await sharedList();render()}finally{libraryRefreshBusy=false}}
+ async function open(){modal.classList.remove('hidden');render();await refreshLibrary()}
+ setInterval(refreshLibrary,2000);
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refreshLibrary()});
  function render(){
   list.replaceChildren();
   for(const d of sharedDocuments){
