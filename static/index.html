@@ -505,14 +505,18 @@ async function resolveSharedConflict(){
    return true;
   }catch(err){if(err.status===409){sharedStatus('統合中に他の更新が入りました。再度保存してください');return false}throw err}
  }
- // Same-page conflict: never overwrite remote changes. Preserve all local work as a separate shared document.
- if(!confirm('同じ文章欄が同時に編集されました。両方の内容を守るため、あなたの編集を「競合復旧版」として別資料に保存します。元の共有資料は変更しません。続けますか？'))return false;
+ // A cancelled comparison must NEVER fall through to a recovery-copy prompt.
+ // Keep the local draft and original shared document unchanged until the user chooses.
+ sharedStatus('競合した編集内容を保持しています。保存ボタンから文章を選び直せます。');
+ return false;
+ /* Legacy recovery-copy fallback intentionally disabled:
  const originalName=sharedDocuments.find(d=>d.id===originalId)?.name||state.client||'資料';
  const copy=await sharedAPI('',{name:originalName+'（競合復旧版 '+new Date().toLocaleString('ja-JP')+'）',data:JSON.parse(snapshot)});
  sharedId=copy.id;sharedRev=copy.revision;sharedBase=JSON.parse(snapshot);sharedConflict=false;
  sharedDirty=JSON.stringify(state)!==snapshot;
  history.replaceState(null,'',location.pathname+'?doc='+sharedId);
  await sharedList();updateCurrentDocumentBanner();sharedStatus('競合復旧版をクラウドに保存しました（元の資料は保持）');return true;
+ */
 }
 async function manualSave(){const status=$('manual-save-status'),button=$('manual-save');button.disabled=true;status.textContent='保存中…';try{const snapshot=JSON.stringify(state);let browserSaved=false;try{localStorage.setItem(KEY,snapshot);browserSaved=localStorage.getItem(KEY)===snapshot}catch(storageError){console.warn('Browser storage full; proceeding with cloud save',storageError)}if(sharedConflict){const resolved=await resolveSharedConflict();if(!resolved){status.textContent='競合は未解決です。編集内容は画面に保持しています';return}if(!sharedDirty){status.textContent='✓ クラウド保存完了（競合解消）';return}}if(sharedBusy){status.textContent='自動保存の完了を待っています…';for(let attempt=0;attempt<40&&sharedBusy;attempt++)await new Promise(resolve=>setTimeout(resolve,150));if(sharedBusy)throw Error('自動保存が完了しません。画面を更新せず再度保存してください')}if(!sharedId){if(cloudCreating)throw Error('共有資料を作成中です。少し待って再度保存してください');cloudCreating=true;try{const d=await sharedAPI('',{name:(state.client||'新規クライアント')+' SNS撮影企画案',data:JSON.parse(snapshot)});sharedId=d.id;sharedRev=d.revision;sharedConflict=false;history.replaceState(null,'',location.pathname+'?doc='+sharedId);await sharedList();if(JSON.stringify(state)!==snapshot){sharedDirty=true;await sharedSave()}}finally{cloudCreating=false}}else{sharedDirty=true;clearTimeout(sharedTimer);await sharedSave()}if(sharedConflict)throw Error('競合を解消できませんでした。現在の編集内容は保持しています');if(sharedDirty){const latest=await sharedAPI('/'+sharedId);if(JSON.stringify(latest.data)===JSON.stringify(state)){sharedRev=latest.revision;sharedBase=structuredClone(latest.data);sharedDirty=false;sharedConflict=false}else{const reason=$('shared-status').textContent||'保存待ち';throw Error('クラウド未保存：'+reason)}}status.textContent=browserSaved?'✓ 保存完了（クラウド・ブラウザ）':'✓ クラウド保存完了（ブラウザ容量不足）';updateCurrentDocumentBanner()}catch(e){status.textContent='⚠ 保存失敗：'+e.message}finally{button.disabled=false}}
 $('manual-save').onclick=manualSave;
