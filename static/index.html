@@ -316,6 +316,7 @@ function scheduleAutoConflictPrompt(){
   if(!autoConflictPromptPending)return;
   if(!sharedConflict||!sharedId){autoConflictPromptPending=false;return}
   if(sharedBusy||sharedLoading||document.visibilityState!=='visible'||sharedIsEditing()){
+   // Do not interrupt typing. The persistent comparison action remains available.
    setTimeout(attempt,700);return;
   }
   autoConflictPromptPending=false;autoConflictPromptRunning=true;
@@ -368,7 +369,7 @@ async function sharedSave(){if(!sharedId||sharedBusy||sharedConflict||!sharedDir
    sharedStatus('最新の保存内容を確認しました / 更新 '+sharedRev);
   }else{
    sharedConflict=true;
-   sharedStatus('同じ箇所が同時に変更されました。自動保存を停止し、このブラウザの内容を退避しました。［未保存データを復元］から確認してください。');scheduleAutoConflictPrompt();
+   sharedStatus('同じ文章の編集が重なりました。入力は続けられます。編集後に「両方の文章を比較して選ぶ」を押してください。');
   }
  }catch(fetchError){sharedConflict=true;sharedStatus('競合：編集内容をブラウザに退避しました。最新版を確認できませんでした')}
 }else sharedStatus('共有保存失敗：'+e.message)}finally{sharedBusy=false;if(sharedDirty&&!sharedConflict){clearTimeout(sharedTimer);sharedTimer=setTimeout(sharedSave,3000)}}}
@@ -378,9 +379,9 @@ async function sharedSave(){if(!sharedId||sharedBusy||sharedConflict||!sharedDir
  panel.id='preview-conflict-recovery';
  panel.style.cssText='display:none;position:fixed;left:16px;bottom:16px;z-index:950;max-width:340px;padding:14px;background:#fff5f2;color:#782c22;border:1px solid #e5a79a;border-radius:12px;box-shadow:0 6px 24px #0002;font:13px system-ui';
  const title=document.createElement('strong');title.textContent='同じ文章欄の編集が重なりました';
- const desc=document.createElement('p');desc.textContent='この画面の文章は保持しています。別の資料として保存すると、両方の編集を残せます。';
- const button=document.createElement('button');button.type='button';button.textContent='自分の編集を別資料に保存';button.style.cssText='padding:8px 10px;border-radius:7px;background:#782c22;color:white;border:0;cursor:pointer';
- button.onclick=async()=>{button.disabled=true;try{await manualSave()}finally{button.disabled=false;render()}};
+ const desc=document.createElement('p');desc.textContent='入力内容は保持されています。編集を終えたら、両方の文章を比較して残す内容を選べます。';
+ const button=document.createElement('button');button.type='button';button.textContent='両方の文章を比較して選ぶ';button.style.cssText='padding:8px 10px;border-radius:7px;background:#243e70;color:white;border:0;cursor:pointer';
+ button.onclick=async()=>{button.disabled=true;try{document.activeElement?.blur();await resolveSharedConflict()}catch(e){sharedStatus('競合比較に失敗：'+e.message)}finally{button.disabled=false;render()}};
  panel.append(title,desc,button);document.body.appendChild(panel);
  function render(){panel.style.display=sharedConflict&&sharedId?'block':'none'}
  setInterval(render,500);render();
