@@ -1202,7 +1202,7 @@ async function downloadPdfDirect(approvedSnapshot=false,approvedVersion=null){
   const visible=[...page.querySelectorAll('.free-bubble')];
   const expected=Array.isArray(model.freeBubbles)?model.freeBubbles:[];
   if(visible.length!==expected.length||visible.some((bubble,i)=>Number(bubble.dataset.bubble)!==i)){
-   alert('PDF出力を停止しました。画面の吹き出しと保存データに差があります。編集内容を確認し、保存完了後にもう一度お試しください。');
+   alert('画面と保存データの吹き出し数が異なります。誤ったPDFを出さないため出力を中止しました。画面を再読み込みせず、編集画面の状態を確認してください。');
    return;
   }
  }
