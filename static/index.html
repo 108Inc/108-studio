@@ -1178,8 +1178,19 @@ async function downloadPdfDirect(approvedSnapshot=false,approvedVersion=null){
  try{const d=await sharedAPI('/'+sharedId);if(approvedSnapshot){if(!approvedVersion||d.approvedRevision!==approvedVersion){alert('承認済み版が見つかりません');return}}else{if(d.revision!==sharedRev){alert('資料の最新版を読み込んでからPDF出力してください');return}if(JSON.stringify(d.data)!==JSON.stringify(state)){alert('PDF出力を停止しました。画面とクラウドの保存内容が一致しません。最新版を取得して、削除した吹き出しが残っていないか確認してください。');return}if(d.docType!=='test'&&(d.approvedRevision!==sharedRev||!['承認済み','提出済み'].includes(d.status))){const me=await fetch('/api/me',{credentials:'include'}).then(r=>{if(!r.ok)throw Error('ログイン状態を確認できません');return r.json()});if(me.email!=='r.nakajima@108-inc.net'){alert('修正版のPDF出力には再承認が必要です');return}}}}catch(e){alert('承認状況を確認できません：'+e.message);return}
  const btn=$('print');if(btn.disabled)return;
  if($('warning').textContent&&!confirm('未入力項目または文字のはみ出しがあります。PDF出力を続けますか？'))return;
- // Rebuild the PDF source from the current canonical document state, not stale editor DOM.
- renderPages();
+ // Do not redraw the editor before export: redrawing can revive stale state and hide a deletion mismatch.
+ // Fail closed if the visible bubbles differ from the current saved model.
+ for(const page of $('pages').querySelectorAll(':scope > .page[data-idea-index]')){
+  if(!page.querySelector('.free-workspace'))continue;
+  const index=Number(page.dataset.ideaIndex),model=state.ideas[index];
+  if(!model)continue;
+  const visible=[...page.querySelectorAll('.free-bubble')];
+  const expected=Array.isArray(model.freeBubbles)?model.freeBubbles:[];
+  if(visible.length!==expected.length||visible.some((bubble,i)=>Number(bubble.dataset.bubble)!==i)){
+   alert('PDF出力を停止しました。画面の吹き出しと保存データに差があります。編集内容を確認し、保存完了後にもう一度お試しください。');
+   return;
+  }
+ }
  const pages=[...$('pages').querySelectorAll(':scope > .page')];
  if(!pages.length){alert('出力するページがありません');return}
  btn.disabled=true;const old=btn.textContent;btn.textContent='PDFを作成中…';
