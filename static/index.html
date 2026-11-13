@@ -1227,6 +1227,31 @@ if(d.docType!=='test'&&(d.approvedRevision!==sharedRev||!['承認済み','提出
     note.style.setProperty('visibility','visible','important');
     note.style.setProperty('opacity','1','important');
    });
+   // Keep image and bubble positions in the same editor-width coordinate system.
+   // PDF workspace height differs from the editor; percentage top values otherwise drift.
+   const editorWorkspace=page.querySelector('.free-workspace');
+   const editorRect=editorWorkspace?.getBoundingClientRect();
+   const pdfWorkspace=clone.querySelector('.free-workspace');
+   if(editorRect&&editorRect.width>0&&pdfWorkspace){
+    pdfWorkspace.style.setProperty('container-type','inline-size','important');
+    const place=(selector)=>{
+     page.querySelectorAll(selector).forEach((original,index)=>{
+      const target=clone.querySelectorAll(selector)[index];
+      if(!target)return;
+      const rect=original.getBoundingClientRect();
+      const scale=100/editorRect.width;
+      target.style.setProperty('left',((rect.left-editorRect.left)*scale)+'cqw','important');
+      target.style.setProperty('top',((rect.top-editorRect.top)*scale)+'cqw','important');
+      target.style.setProperty('width',(rect.width*scale)+'cqw','important');
+      if(selector==='.free-bubble'){
+       target.style.setProperty('height',(rect.height*scale)+'cqw','important');
+       target.style.setProperty('min-height','0','important');
+      }
+     });
+    };
+    place('.free-image');
+    place('.free-bubble');
+   }
    clone.querySelectorAll('.free-bubble').forEach(b=>{
     const index=Number(b.dataset.bubble),saved=idea?.freeBubbles?.[index];
     if(!saved){b.remove();return}
@@ -1243,8 +1268,7 @@ if(d.docType!=='test'&&(d.approvedRevision!==sharedRev||!['承認済み','提出
      const sourceText=source.querySelector('.free-bubble-text');
      const style=sourceText?getComputedStyle(sourceText):null;
      if(rect.width>0&&rect.height>0){
-      b.style.setProperty('min-height',rect.height+'px','important');
-      b.style.removeProperty('height');
+      // Geometry was frozen proportionally above; do not overwrite it with editor pixels.
      }
      const text=b.querySelector('.free-bubble-text');
      if(text&&style){
