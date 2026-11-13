@@ -1231,7 +1231,38 @@ async function downloadPdfDirect(approvedSnapshot=false,approvedVersion=null){
     note.style.setProperty('visibility','visible','important');
     note.style.setProperty('opacity','1','important');
    });
-   clone.querySelectorAll('.free-bubble').forEach(b=>{const index=Number(b.dataset.bubble),saved=idea?.freeBubbles?.[index];if(!saved){b.remove();return}const input=b.querySelector('.free-bubble-text');if(input){const text=document.createElement('div');text.className='free-bubble-text';text.textContent=saved.text||'';input.replaceWith(text)}b.querySelector('.free-bubble-direction')?.remove()});
+   clone.querySelectorAll('.free-bubble').forEach(b=>{
+    const index=Number(b.dataset.bubble),saved=idea?.freeBubbles?.[index];
+    if(!saved){b.remove();return}
+    const source=page.querySelector('.free-bubble[data-bubble="'+index+'"]');
+    const input=b.querySelector('.free-bubble-text');
+    if(input){
+     const text=document.createElement('div');text.className='free-bubble-text';
+     text.textContent=saved.text||'';
+     input.replaceWith(text);
+    }
+    // Freeze the actual on-screen bubble dimensions and text metrics before PDF print CSS is applied.
+    if(source){
+     const rect=source.getBoundingClientRect();
+     const sourceText=source.querySelector('.free-bubble-text');
+     const style=sourceText?getComputedStyle(sourceText):null;
+     if(rect.width>0&&rect.height>0){
+      b.style.setProperty('min-height',rect.height+'px','important');
+      b.style.setProperty('height',rect.height+'px','important');
+     }
+     const text=b.querySelector('.free-bubble-text');
+     if(text&&style){
+      text.style.setProperty('font-size',style.fontSize,'important');
+      text.style.setProperty('line-height',style.lineHeight,'important');
+      text.style.setProperty('padding',style.padding,'important');
+      text.style.setProperty('letter-spacing',style.letterSpacing,'important');
+      text.style.setProperty('height','auto','important');
+      text.style.setProperty('min-height','0','important');
+      text.style.setProperty('overflow','hidden','important');
+     }
+    }
+    b.querySelector('.free-bubble-direction')?.remove();
+   });
    clone.querySelectorAll('.free-note-restore-button').forEach(button=>button.remove());
    clone.querySelectorAll('.free-workspace').forEach(area=>{
     if(!area.querySelector('.proposal-free-note')&&!area.querySelector('.free-image img')&&!area.querySelector('.free-bubble'))area.remove();
