@@ -434,7 +434,7 @@ async function sharedSave(){if(!sharedId||sharedBusy||sharedConflict||!sharedDir
    try{localStorage.setItem('108-studio-conflict-'+sharedId,JSON.stringify({savedAt:new Date().toISOString(),revision:sharedRev,data:JSON.parse(snapshot)}))}catch(_){}
    const updated=await sharedAPI('/'+sharedId,{revision:latest.revision,data:merged});
    sharedRev=updated.revision;sharedBase=structuredClone(merged);
-   if(JSON.stringify(state)===snapshot){state=merged;sharedDirty=false;renderPages()}else{sharedDirty=true}
+   if(JSON.stringify(state)===snapshot){state=merged;sharedDirty=false;renderPages()}else{sharedDirty=true;clearTimeout(sharedTimer);sharedTimer=setTimeout(sharedSave,250)}
    sharedConflict=false;sharedStatus('別々の編集欄の変更を統合して保存しました / 更新 '+sharedRev);
   }else if(JSON.stringify(latest.data)===snapshot){
    sharedRev=latest.revision;sharedBase=structuredClone(latest.data);sharedDirty=JSON.stringify(state)!==snapshot;sharedConflict=false;
@@ -1180,13 +1180,8 @@ async function downloadPdfDirect(approvedSnapshot=false,approvedVersion=null){
  const local=state,remote=d.data;
  const relevant=(x)=>JSON.stringify((x.ideas||[]).map(idea=>({freeBubbles:idea.freeBubbles||[],freeNote:idea.freeNote||'',freeNoteHidden:idea.freeNoteHidden||false})));
  if(relevant(local)!==relevant(remote)){
-  const useLocal=confirm('画面とクラウドの吹き出し・文字枠が異なります。\n\nOK：今画面にある内容をクラウドへ保存してからPDF出力\nキャンセル：何も変更せず中止\n\n※ 他の人の更新がある場合は保存を拒否します。');
-  if(!useLocal)return;
-  try{
-   const updated=await sharedAPI('/'+sharedId,{revision:sharedRev,data:structuredClone(state)});
-   sharedRev=updated.revision;sharedBase=structuredClone(state);sharedDirty=false;sharedConflict=false;
-   sharedStatus('PDF出力前に画面の内容を保存しました / 更新 '+sharedRev);
-  }catch(err){alert('クラウド保存に失敗しました。PDFは出力しません：'+err.message);return}
+  alert('画面とクラウドの吹き出し・文字枠が一致しません。誤ったPDFや上書きを防ぐため出力を中止しました。保存状態を確認してください。');
+  return;
  }else{
   // UI-only fields such as selectedPage and client palette are not content conflicts.
   console.info('PDF: ignoring non-content differences between editor and cloud');
@@ -1249,7 +1244,7 @@ async function downloadPdfDirect(approvedSnapshot=false,approvedVersion=null){
      const style=sourceText?getComputedStyle(sourceText):null;
      if(rect.width>0&&rect.height>0){
       b.style.setProperty('min-height',rect.height+'px','important');
-      b.style.setProperty('height',rect.height+'px','important');
+      b.style.removeProperty('height');
      }
      const text=b.querySelector('.free-bubble-text');
      if(text&&style){
@@ -1259,7 +1254,7 @@ async function downloadPdfDirect(approvedSnapshot=false,approvedVersion=null){
       text.style.setProperty('letter-spacing',style.letterSpacing,'important');
       text.style.setProperty('height','auto','important');
       text.style.setProperty('min-height','0','important');
-      text.style.setProperty('overflow','hidden','important');
+      text.style.setProperty('overflow','visible','important');
      }
     }
     b.querySelector('.free-bubble-direction')?.remove();
